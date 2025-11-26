@@ -44,6 +44,10 @@ const formatNumber = (num: number) => {
   }).format(num)
 }
 
+const formatInteger = (num: number) => {
+  return new Intl.NumberFormat('fr-FR').format(Math.round(num))
+}
+
 const formatAddress = (address: string) => {
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
 }
@@ -217,6 +221,18 @@ const poolPowerChartData = computed(() => {
   }
 })
 
+const tooltipCallbacks = {
+  label(context: any) {
+    const datasetLabel = context.dataset?.label || ''
+    const rawValue = Number(context.raw ?? 0)
+    const isCountDataset = /wallet|adresse|nombre|count/i.test(datasetLabel)
+    const formatter = isCountDataset ? formatInteger : formatNumber
+    const formatted = formatter(rawValue)
+    if (!datasetLabel) return formatted
+    return `${datasetLabel}: ${formatted}`
+  },
+}
+
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -238,6 +254,7 @@ const chartOptions = {
       borderWidth: 1,
       padding: 12,
       cornerRadius: 8,
+      callbacks: tooltipCallbacks,
     },
   },
   scales: {
@@ -256,6 +273,20 @@ const chartOptions = {
       },
       grid: {
         color: 'rgba(51, 65, 85, 0.3)',
+      },
+    },
+  },
+}
+
+const countChartOptions = {
+  ...chartOptions,
+  scales: {
+    ...chartOptions.scales,
+    y: {
+      ...chartOptions.scales.y,
+      ticks: {
+        ...chartOptions.scales.y.ticks,
+        callback: (value: number) => formatInteger(Number(value)),
       },
     },
   },
@@ -371,17 +402,23 @@ const poolPowerChartOptions = {
       <div class="chart-card">
         <h3>📈 Distribution des Balances REG</h3>
         <div class="chart-container" v-if="balanceDistributionChartData">
-          <Bar :data="balanceDistributionChartData" :options="chartOptions" />
+          <Bar :data="balanceDistributionChartData" :options="countChartOptions" />
         </div>
       </div>
 
       <div class="chart-card">
         <h3>📊 Distribution du Power Voting</h3>
         <div class="chart-container" v-if="powerVotingDistributionChartData">
-          <Bar :data="powerVotingDistributionChartData" :options="chartOptions" />
+          <Bar :data="powerVotingDistributionChartData" :options="countChartOptions" />
         </div>
       </div>
     </div>
+
+    <p class="chart-note" v-if="balanceDistributionChartData">
+      Chaque barre représente une tranche de balances REG (axe horizontal). La hauteur de la barre
+      indique combien de wallets se situent dans cette tranche (axe vertical). Exemple : « 100‑500 »
+      signifie “4 845 wallets détiennent entre 100 et 500 REG équivalents”.
+    </p>
 
     <!-- Pools Analysis Section -->
     <div class="section-header">
@@ -711,6 +748,14 @@ const poolPowerChartOptions = {
   background: var(--glass-bg);
   border: 1px dashed var(--border-color);
   border-radius: 0.75rem;
+}
+
+.chart-note {
+  margin-top: -1rem;
+  margin-bottom: 2rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .chart-explainer {
