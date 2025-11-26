@@ -181,6 +181,53 @@ export const useDataStore = defineStore('data', () => {
       .slice(0, 10)
   })
 
+  const poolAnalysis = computed(() => {
+    if (balances.value.length === 0) return null
+
+    const v2Stats: PoolStats = { totalREG: 0, count: 0, dexs: {} }
+    const v3Stats: PoolStats = { totalREG: 0, count: 0, dexs: {} }
+
+    // Track unique pools found
+    const pools = new Set<string>()
+
+    balances.value.forEach(wallet => {
+      // Check Gnosis chain (main focus based on data)
+      const dexs = wallet.sourceBalance?.gnosis?.dexs
+      if (!dexs) return
+
+      Object.entries(dexs).forEach(([dexName, positions]: [string, any]) => {
+        if (!Array.isArray(positions)) return
+
+        positions.forEach((pos: PoolPosition) => {
+          const regAmount = parseFloat(pos.equivalentREG || '0')
+          if (regAmount <= 0) return
+
+          // Determine if V3 or V2
+          // V3 positions have tickLower/tickUpper
+          const isV3 = pos.tickLower !== undefined && pos.tickUpper !== undefined
+
+          if (isV3) {
+            v3Stats.totalREG += regAmount
+            v3Stats.count++
+            v3Stats.dexs[dexName] = (v3Stats.dexs[dexName] || 0) + regAmount
+          } else {
+            v2Stats.totalREG += regAmount
+            v2Stats.count++
+            v2Stats.dexs[dexName] = (v2Stats.dexs[dexName] || 0) + regAmount
+          }
+
+          pools.add(pos.poolAddress)
+        })
+      })
+    })
+
+    return {
+      v2: v2Stats,
+      v3: v3Stats,
+      totalPools: pools.size
+    }
+  })
+
   function setBalancesData(data: any) {
     rawBalancesData.value = data
   }
@@ -203,8 +250,28 @@ export const useDataStore = defineStore('data', () => {
     powerVotingDistribution,
     topBalanceHolders,
     topPowerVoters,
+    poolAnalysis,
     setBalancesData,
     setPowerVotingData,
     clearData,
   }
 })
+
+// Helper interfaces for Pool Analysis
+interface PoolPosition {
+  tokenBalance: string
+  tokenSymbol: string
+  equivalentREG: string
+  poolAddress: string
+  // V3 specific
+  tickLower?: number
+  tickUpper?: number
+  currentTick?: number
+  isActive?: boolean
+}
+
+interface PoolStats {
+  totalREG: number
+  count: number
+  dexs: Record<string, number>
+}

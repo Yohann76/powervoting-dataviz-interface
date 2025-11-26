@@ -111,6 +111,57 @@ const powerVotingDistributionChartData = computed(() => {
       },
     ],
   }
+
+})
+
+const poolsDistributionChartData = computed(() => {
+  const analysis = dataStore.poolAnalysis
+  if (!analysis) return null
+
+  return {
+    labels: ['Pools V2', 'Pools V3'],
+    datasets: [
+      {
+        data: [analysis.v2.totalREG, analysis.v3.totalREG],
+        backgroundColor: ['rgba(139, 92, 246, 0.8)', 'rgba(236, 72, 153, 0.8)'],
+        borderColor: ['rgb(139, 92, 246)', 'rgb(236, 72, 153)'],
+        borderWidth: 2
+      }
+    ]
+  }
+})
+
+const dexsDistributionChartData = computed(() => {
+  const analysis = dataStore.poolAnalysis
+  if (!analysis) return null
+
+  // Merge DEXs from V2 and V3
+  const allDexs = new Set([
+    ...Object.keys(analysis.v2.dexs),
+    ...Object.keys(analysis.v3.dexs)
+  ])
+
+  const labels = Array.from(allDexs)
+  const data = labels.map(dex => {
+    return (analysis.v2.dexs[dex] || 0) + (analysis.v3.dexs[dex] || 0)
+  })
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Total REG',
+        data,
+        backgroundColor: [
+          'rgba(34, 197, 94, 0.8)',
+          'rgba(251, 146, 60, 0.8)',
+          'rgba(14, 165, 233, 0.8)',
+          'rgba(99, 102, 241, 0.8)'
+        ],
+        borderWidth: 0
+      }
+    ]
+  }
 })
 
 const chartOptions = {
@@ -251,6 +302,62 @@ const chartOptions = {
         <h3>📊 Distribution du Power Voting</h3>
         <div class="chart-container" v-if="powerVotingDistributionChartData">
           <Bar :data="powerVotingDistributionChartData" :options="chartOptions" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Pools Analysis Section -->
+    <div class="section-header">
+      <h2>🌊 Analyse Pools V2 & V3</h2>
+      <p>Répartition de la liquidité et impact sur le Power Voting</p>
+    </div>
+
+    <div class="stats-grid" v-if="dataStore.poolAnalysis">
+      <div class="stat-card v2-card">
+        <div class="stat-header">
+          <h3>💧 Pools V2</h3>
+        </div>
+        <div class="stat-content">
+          <div class="stat-item">
+            <span class="stat-label">Total REG</span>
+            <span class="stat-value">{{ formatNumber(dataStore.poolAnalysis.v2.totalREG) }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Nb Positions</span>
+            <span class="stat-value">{{ dataStore.poolAnalysis.v2.count }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-card v3-card">
+        <div class="stat-header">
+          <h3>🦄 Pools V3</h3>
+        </div>
+        <div class="stat-content">
+          <div class="stat-item">
+            <span class="stat-label">Total REG</span>
+            <span class="stat-value">{{ formatNumber(dataStore.poolAnalysis.v3.totalREG) }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Nb Positions</span>
+            <span class="stat-value">{{ dataStore.poolAnalysis.v3.count }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>🥧 Répartition V2 vs V3</h3>
+        <div class="chart-container" v-if="poolsDistributionChartData">
+          <Doughnut :data="poolsDistributionChartData" :options="chartOptions" />
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>🏦 Répartition par DEX</h3>
+        <div class="chart-container" v-if="dexsDistributionChartData">
+          <Bar :data="dexsDistributionChartData" :options="chartOptions" />
         </div>
       </div>
     </div>
@@ -506,5 +613,30 @@ const chartOptions = {
   .analysis-header h2 {
     font-size: 1.75rem;
   }
+}
+
+.section-header {
+  text-align: center;
+  margin: 4rem 0 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.section-header h2 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.section-header p {
+  color: var(--text-secondary);
+}
+
+.v2-card .stat-value {
+  color: #8b5cf6; /* Violet */
+}
+
+.v3-card .stat-value {
+  color: #ec4899; /* Pink */
 }
 </style>

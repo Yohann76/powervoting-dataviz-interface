@@ -86,5 +86,49 @@ describe('Data Store', () => {
         expect(top[0]?.balance).toBe(30)
         expect(top[1]?.address).toBe('0x3')
         expect(top[2]?.address).toBe('0x1')
+        expect(top[2]?.address).toBe('0x1')
+    })
+
+    it('analyzes pools correctly', () => {
+        const store = useDataStore()
+        const mockData = {
+            result: {
+                balances: [
+                    {
+                        walletAddress: '0x1',
+                        sourceBalance: {
+                            gnosis: {
+                                dexs: {
+                                    sushiswap: [
+                                        {
+                                            equivalentREG: '100',
+                                            poolAddress: '0xPool1',
+                                            tickLower: -100,
+                                            tickUpper: 100
+                                        }
+                                    ],
+                                    honeyswap: [
+                                        {
+                                            equivalentREG: '50',
+                                            poolAddress: '0xPool2'
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+
+        store.setBalancesData(mockData)
+
+        const analysis = store.poolAnalysis
+        expect(analysis).not.toBeNull()
+        expect(analysis?.v3.totalREG).toBe(100)
+        expect(analysis?.v3.count).toBe(1)
+        expect(analysis?.v2.totalREG).toBe(50)
+        expect(analysis?.v2.count).toBe(1)
+        expect(analysis?.totalPools).toBe(2)
     })
 })
