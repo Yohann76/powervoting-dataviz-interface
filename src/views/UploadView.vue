@@ -147,6 +147,30 @@ const formatNumber = (num: number) => {
 const formatInteger = (num: number) => {
   return new Intl.NumberFormat('fr-FR').format(Math.round(num))
 }
+
+const getSnapshotDiff = (snapshot: SnapshotInfo) => {
+  if (!snapshot.metrics || snapshots.value.length === 0) return null
+
+  // Find the index of current snapshot
+  const currentIndex = snapshots.value.findIndex((s) => s.date === snapshot.date)
+  if (currentIndex === -1) return null
+
+  // Get the previous snapshot (next in the list, which is chronologically earlier)
+  const previousSnapshot = snapshots.value[currentIndex + 1]
+  if (!previousSnapshot || !previousSnapshot.metrics) return null
+
+  return {
+    walletCount: snapshot.metrics.walletCount - previousSnapshot.metrics.walletCount,
+    totalREG: snapshot.metrics.totalREG - previousSnapshot.metrics.totalREG,
+    totalPowerVoting: snapshot.metrics.totalPowerVoting - previousSnapshot.metrics.totalPowerVoting,
+  }
+}
+
+const formatDiff = (diff: number, isInteger = false) => {
+  if (diff === 0) return ''
+  const formatted = isInteger ? formatInteger(Math.abs(diff)) : formatNumber(Math.abs(diff))
+  return diff > 0 ? `+${formatted}` : `-${formatted}`
+}
 </script>
 
 <template>
@@ -232,21 +256,48 @@ const formatInteger = (num: number) => {
             <div class="snapshot-metric-item">
               <span class="metric-icon">👥</span>
               <div class="metric-content">
-                <span class="metric-value">{{ formatInteger(snapshot.metrics.walletCount) }}</span>
+                <div class="metric-value-row">
+                  <span class="metric-value">{{ formatInteger(snapshot.metrics.walletCount) }}</span>
+                  <span
+                    v-if="getSnapshotDiff(snapshot)"
+                    class="metric-diff"
+                    :class="getSnapshotDiff(snapshot)!.walletCount >= 0 ? 'positive' : 'negative'"
+                  >
+                    {{ formatDiff(getSnapshotDiff(snapshot)!.walletCount, true) }}
+                  </span>
+                </div>
                 <span class="metric-label">wallets</span>
               </div>
             </div>
             <div class="snapshot-metric-item">
               <span class="metric-icon">💰</span>
               <div class="metric-content">
-                <span class="metric-value">{{ formatNumber(snapshot.metrics.totalREG) }}</span>
+                <div class="metric-value-row">
+                  <span class="metric-value">{{ formatNumber(snapshot.metrics.totalREG) }}</span>
+                  <span
+                    v-if="getSnapshotDiff(snapshot)"
+                    class="metric-diff"
+                    :class="getSnapshotDiff(snapshot)!.totalREG >= 0 ? 'positive' : 'negative'"
+                  >
+                    {{ formatDiff(getSnapshotDiff(snapshot)!.totalREG) }}
+                  </span>
+                </div>
                 <span class="metric-label">REG</span>
               </div>
             </div>
             <div class="snapshot-metric-item">
               <span class="metric-icon">⚡</span>
               <div class="metric-content">
-                <span class="metric-value">{{ formatNumber(snapshot.metrics.totalPowerVoting) }}</span>
+                <div class="metric-value-row">
+                  <span class="metric-value">{{ formatNumber(snapshot.metrics.totalPowerVoting) }}</span>
+                  <span
+                    v-if="getSnapshotDiff(snapshot)"
+                    class="metric-diff"
+                    :class="getSnapshotDiff(snapshot)!.totalPowerVoting >= 0 ? 'positive' : 'negative'"
+                  >
+                    {{ formatDiff(getSnapshotDiff(snapshot)!.totalPowerVoting) }}
+                  </span>
+                </div>
                 <span class="metric-label">Power</span>
               </div>
             </div>
@@ -608,6 +659,14 @@ const formatInteger = (num: number) => {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  flex: 1;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .metric-value {
@@ -615,6 +674,24 @@ const formatInteger = (num: number) => {
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+}
+
+.metric-diff {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  line-height: 1.2;
+}
+
+.metric-diff.positive {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.metric-diff.negative {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .metric-label {
