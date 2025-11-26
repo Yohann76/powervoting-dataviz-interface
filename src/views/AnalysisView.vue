@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
+import { loadSnapshotManifest, loadSnapshot, type SnapshotInfo } from '@/utils/snapshotLoader'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -31,10 +32,20 @@ ChartJS.register(
 const router = useRouter()
 const dataStore = useDataStore()
 const expandedWallets = ref<Record<string, boolean>>({})
+const availableSnapshots = ref<SnapshotInfo[]>([])
+const selectedComparisonSnapshot = ref<string | null>(null)
+const isLoadingComparison = ref(false)
 
-onMounted(() => {
+onMounted(async () => {
   if (dataStore.balances.length === 0 || dataStore.powerVoting.length === 0) {
     router.push('/')
+    return
+  }
+
+  try {
+    availableSnapshots.value = await loadSnapshotManifest()
+  } catch (err) {
+    console.error('Failed to load snapshots:', err)
   }
 })
 
@@ -59,6 +70,41 @@ const toggleWalletPositions = (address: string) => {
 
 const formatAddress = (address: string) => {
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
+}
+
+const formatSnapshotDate = (dateStr: string) => {
+  const [day, month, year] = dateStr.split('-')
+  return new Date(`${year}-${month}-${day}`).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+const loadComparisonSnapshot = async () => {
+  if (!selectedComparisonSnapshot.value) return
+
+  isLoadingComparison.value = true
+  try {
+    const snapshot = availableSnapshots.value.find((s) => s.date === selectedComparisonSnapshot.value)
+    if (!snapshot) return
+
+    const { balances, powerVoting } = await loadSnapshot(snapshot)
+    dataStore.setComparisonSnapshot({
+      balances,
+      powerVoting,
+      date: snapshot.date,
+    })
+  } catch (err) {
+    console.error('Failed to load comparison snapshot:', err)
+  } finally {
+    isLoadingComparison.value = false
+  }
+}
+
+const clearComparison = () => {
+  dataStore.clearComparisonSnapshot()
+  selectedComparisonSnapshot.value = null
 }
 
 // Chart data
@@ -611,6 +657,88 @@ const poolPowerChartOptions = {
       </div>
     </div>
 
+    <!-- Snapshot Comparison -->
+    <div class="section-header">
+      <h2>📊 Comparaison avec snapshot historique</h2>
+      <p>Comparez les métriques actuelles avec un snapshot précédent</p>
+    </div>
+
+    <div class="comparison-section" v-if="availableSnapshots.length > 0">
+      <div class="comparison-controls">
+        <select
+          v-model="selectedComparisonSnapshot"
+          @change="loadComparisonSnapshot"
+          :disabled="isLoadingComparison"
+          class="comparison-select"
+        >
+          <option value="">-- Sélectionner un snapshot --</option>
+          <option
+            v-for="snapshot in availableSnapshots"
+            :key="snapshot.date"
+            :value="snapshot.date"
+          >
+            {{ formatSnapshotDate(snapshot.date) }}
+          </option>
+        </select>
+        <button
+          v-if="dataStore.snapshotComparison"
+          @click="clearComparison"
+          class="btn-clear-comparison"
+        >
+          ✕ Effacer la comparaison
+        </button>
+      </div>
+
+      <div v-if="dataStore.snapshotComparison" class="comparison-results">
+        <div class="comparison-card">
+          <h3>📈 Différences</h3>
+          <div class="comparison-grid">
+            <div class="comparison-item">
+              <div class="comparison-label">Nombre de holders</div>
+              <div class="comparison-values">
+                <span class="comparison-current">{{ formatInteger(dataStore.snapshotComparison.current.holders) }}</span>
+                <span class="comparison-arrow">→</span>
+                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.holders >= 0 ? 'positive' : 'negative'">
+                  {{ dataStore.snapshotComparison.diff.holders >= 0 ? '+' : '' }}{{ formatInteger(dataStore.snapshotComparison.diff.holders) }}
+                </span>
+              </div>
+              <div class="comparison-reference">
+                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatInteger(dataStore.snapshotComparison.comparison.holders) }}
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Wallets en pools</div>
+              <div class="comparison-values">
+                <span class="comparison-current">{{ formatInteger(dataStore.snapshotComparison.current.poolWallets) }}</span>
+                <span class="comparison-arrow">→</span>
+                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.poolWallets >= 0 ? 'positive' : 'negative'">
+                  {{ dataStore.snapshotComparison.diff.poolWallets >= 0 ? '+' : '' }}{{ formatInteger(dataStore.snapshotComparison.diff.poolWallets) }}
+                </span>
+              </div>
+              <div class="comparison-reference">
+                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatInteger(dataStore.snapshotComparison.comparison.poolWallets) }}
+              </div>
+            </div>
+
+            <div class="comparison-item">
+              <div class="comparison-label">Power Voting total</div>
+              <div class="comparison-values">
+                <span class="comparison-current">{{ formatNumber(dataStore.snapshotComparison.current.totalPower) }}</span>
+                <span class="comparison-arrow">→</span>
+                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.totalPower >= 0 ? 'positive' : 'negative'">
+                  {{ dataStore.snapshotComparison.diff.totalPower >= 0 ? '+' : '' }}{{ formatNumber(dataStore.snapshotComparison.diff.totalPower) }}
+                </span>
+              </div>
+              <div class="comparison-reference">
+                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatNumber(dataStore.snapshotComparison.comparison.totalPower) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Top Holders -->
     <div class="top-holders-grid">
       <div class="top-card">
@@ -1117,5 +1245,150 @@ const poolPowerChartOptions = {
 
 .v3-card .stat-value {
   color: #ec4899; /* Pink */
+}
+
+.comparison-section {
+  margin-bottom: 2.5rem;
+}
+
+.comparison-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.comparison-select {
+  flex: 1;
+  min-width: 250px;
+  padding: 0.75rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.comparison-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-clear-comparison {
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-clear-comparison:hover {
+  background: var(--bg-secondary);
+  border-color: var(--error-color);
+  color: var(--error-color);
+}
+
+.comparison-results {
+  animation: fadeIn 0.5s ease;
+}
+
+.comparison-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.comparison-card h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.comparison-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+}
+
+.comparison-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.comparison-values {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.comparison-current {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.comparison-arrow {
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+}
+
+.comparison-diff {
+  font-size: 1.5rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.comparison-diff.positive {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.comparison-diff.negative {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.comparison-reference {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .comparison-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .comparison-select {
+    min-width: 100%;
+  }
+
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

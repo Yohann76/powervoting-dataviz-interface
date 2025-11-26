@@ -1,0 +1,82 @@
+{
+  "snapshots": [
+    {
+      "date": "17-11-2025",
+      "dateFormatted": "2025-11-17",
+      "balancesFile": "balancesREG_2025-11-17T17h21mn00_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_11_17T17h25mn12.json"
+    },
+    {
+      "date": "14-08-2025",
+      "dateFormatted": "2025-08-14",
+      "balancesFile": "balancesREG_2025-08-14T09h29mn41_utc+02.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_08_14T10h16mn16.json"
+    },
+    {
+      "date": "17-06-2025",
+      "dateFormatted": "2025-06-17",
+      "balancesFile": "balancesREG_2025-06-17T10h50mn25_utc+02.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_06_17T10h51mn35.json"
+    },
+    {
+      "date": "04-05-2025",
+      "dateFormatted": "2025-05-04",
+      "balancesFile": "balancesREG_2025-05-04T09h52mn57_utc+02.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_05_04T09h53mn26.json"
+    },
+    {
+      "date": "13-04-2025",
+      "dateFormatted": "2025-04-13",
+      "balancesFile": "balancesREG_2025-04-12T14h58mn04_utc+02.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_04_12T14h59mn01.json"
+    },
+    {
+      "date": "23-03-2025",
+      "dateFormatted": "2025-03-23",
+      "balancesFile": "balancesREG_2025-03-23T11h13mn29_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_03_23T11h14mn14.json"
+    },
+    {
+      "date": "15-03-2025",
+      "dateFormatted": "2025-03-15",
+      "balancesFile": "balancesREG_2025-03-15T14h42mn43_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_03_15T14h43mn31.json"
+    },
+    {
+      "date": "26-02-2025",
+      "dateFormatted": "2025-02-26",
+      "balancesFile": "balancesREG_2025-02-26T09h04mn55_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_02_26T09h06mn09.json"
+    },
+    {
+      "date": "05-02-2025",
+      "dateFormatted": "2025-02-05",
+      "balancesFile": "balancesREG_2025-02-05T14h21mn49_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_02_05T14h22mn42.json"
+    },
+    {
+      "date": "27-12-2024",
+      "dateFormatted": "2024-12-27",
+      "balancesFile": "balancesREG_2024-12-27T11h51mn57_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2024_12_27T11h53mn47.json"
+    },
+    {
+      "date": "14-11-2024",
+      "dateFormatted": "2024-11-14",
+      "balancesFile": "balancesREG_2024-11-14T00h04mn14_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2024_11_14T00h04mn33.json"
+    },
+    {
+      "date": "29-10-2024",
+      "dateFormatted": "2024-10-29",
+      "balancesFile": "balancesREG_29-10-2024T17h58mn08_utc+01.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_29_10_2024T17h59mn16.json"
+    },
+    {
+      "date": "26-04-2024",
+      "dateFormatted": "2024-04-26",
+      "balancesFile": "balancesREG_2025-04-26T15h41mn35_utc+02.json",
+      "powerVotingFile": "powerVotingREG_balancesREGModel_linearModel_2025_04_26T15h43mn12.json"
+    }
+  ]
+}

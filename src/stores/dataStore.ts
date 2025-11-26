@@ -345,9 +345,68 @@ export const useDataStore = defineStore('data', () => {
     rawPowerVotingData.value = data
   }
 
+  const comparisonSnapshot = ref<{
+    balances: any
+    powerVoting: any
+    date: string
+  } | null>(null)
+
+  const snapshotComparison = computed(() => {
+    if (!comparisonSnapshot.value) return null
+
+    const current = {
+      holders: balances.value.length,
+      poolWallets: addressPoolProfiles.value.length,
+      totalPower: powerVoting.value.reduce((sum, p) => sum + parseFloat(String(p.powerVoting || 0)), 0),
+    }
+
+    const compBalances = comparisonSnapshot.value.balances.result?.balances || comparisonSnapshot.value.balances
+    const compPower = comparisonSnapshot.value.powerVoting.result?.powerVoting || comparisonSnapshot.value.powerVoting
+
+    const compBalancesArray = Array.isArray(compBalances) ? compBalances : []
+    const compPowerArray = Array.isArray(compPower) ? compPower : []
+
+    // Calculate pool wallets for comparison (simplified - would need full processing)
+    const compPoolWallets = compBalancesArray.filter((b: any) => {
+      const networks = b.sourceBalance
+      if (!networks) return false
+      return Object.values(networks).some((net: any) => {
+        const dexs = net?.dexs
+        if (!dexs) return false
+        return Object.values(dexs).some((positions: any) => Array.isArray(positions) && positions.length > 0)
+      })
+    }).length
+
+    const comparison = {
+      holders: compBalancesArray.length,
+      poolWallets: compPoolWallets,
+      totalPower: compPowerArray.reduce((sum: number, p: any) => sum + parseFloat(String(p.powerVoting || 0)), 0),
+    }
+
+    return {
+      current,
+      comparison,
+      diff: {
+        holders: current.holders - comparison.holders,
+        poolWallets: current.poolWallets - comparison.poolWallets,
+        totalPower: current.totalPower - comparison.totalPower,
+      },
+      date: comparisonSnapshot.value.date,
+    }
+  })
+
+  function setComparisonSnapshot(data: { balances: any; powerVoting: any; date: string }) {
+    comparisonSnapshot.value = data
+  }
+
+  function clearComparisonSnapshot() {
+    comparisonSnapshot.value = null
+  }
+
   function clearData() {
     rawBalancesData.value = null
     rawPowerVotingData.value = null
+    comparisonSnapshot.value = null
   }
 
   return {
@@ -363,8 +422,11 @@ export const useDataStore = defineStore('data', () => {
     addressPoolProfiles,
     poolPowerCorrelation,
     poolWalletBreakdown,
+    snapshotComparison,
     setBalancesData,
     setPowerVotingData,
+    setComparisonSnapshot,
+    clearComparisonSnapshot,
     clearData,
   }
 })

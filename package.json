@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
-    "build-only": "vite build",
+    "build-only": "npm run generate-manifest && vite build",
+    "prebuild": "npm run generate-manifest",
+    "generate-manifest": "node scripts/generate-snapshot-manifest.js",
     "type-check": "vue-tsc --build",
     "format": "prettier --write src/",
     "test": "vitest"

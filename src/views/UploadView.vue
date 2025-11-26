@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
+import { loadSnapshotManifest, loadSnapshot, type SnapshotInfo } from '@/utils/snapshotLoader'
 import Papa from 'papaparse'
 
 const router = useRouter()
@@ -11,6 +12,8 @@ const balancesFile = ref<File | null>(null)
 const powerVotingFile = ref<File | null>(null)
 const isLoading = ref(false)
 const error = ref<string>('')
+const snapshots = ref<SnapshotInfo[]>([])
+const isLoadingSnapshots = ref(false)
 
 const handleFileChange = (event: Event, type: 'balances' | 'powerVoting') => {
   const target = event.target as HTMLInputElement
@@ -95,6 +98,44 @@ const loadMockData = async () => {
     isLoading.value = false
   }
 }
+
+onMounted(async () => {
+  isLoadingSnapshots.value = true
+  try {
+    snapshots.value = await loadSnapshotManifest()
+  } catch (err) {
+    console.error('Failed to load snapshots:', err)
+  } finally {
+    isLoadingSnapshots.value = false
+  }
+})
+
+const loadSnapshotData = async (snapshot: SnapshotInfo) => {
+  isLoading.value = true
+  error.value = ''
+
+  try {
+    const { balances, powerVoting } = await loadSnapshot(snapshot)
+
+    dataStore.setBalancesData(balances)
+    dataStore.setPowerVotingData(powerVoting)
+
+    router.push('/analysis')
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Erreur lors du chargement du snapshot'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const formatSnapshotDate = (dateStr: string) => {
+  const [day, month, year] = dateStr.split('-')
+  return new Date(`${year}-${month}-${day}`).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
 </script>
 
 <template>
@@ -156,6 +197,28 @@ const loadMockData = async () => {
         <button @click="loadMockData" :disabled="isLoading" class="btn btn-secondary">
           <span v-if="!isLoading">🎯 Utiliser les données exemples</span>
           <span v-else class="loading">⏳ Chargement...</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="snapshots-section" v-if="snapshots.length > 0">
+      <div class="snapshots-header">
+        <h3>📸 Snapshots historiques ({{ snapshots.length }})</h3>
+        <p>Chargez un snapshot précédent pour analyse ou comparaison</p>
+      </div>
+      <div class="snapshots-grid">
+        <button
+          v-for="snapshot in snapshots"
+          :key="snapshot.date"
+          @click="loadSnapshotData(snapshot)"
+          :disabled="isLoading"
+          class="snapshot-card"
+        >
+          <div class="snapshot-date">{{ formatSnapshotDate(snapshot.date) }}</div>
+          <div class="snapshot-files">
+            <span class="snapshot-file">📄 {{ snapshot.balancesFile }}</span>
+            <span class="snapshot-file">⚡ {{ snapshot.powerVotingFile }}</span>
+          </div>
         </button>
       </div>
     </div>
@@ -418,6 +481,84 @@ const loadMockData = async () => {
   line-height: 1.6;
 }
 
+.snapshots-section {
+  margin: 3rem 0;
+  background: var(--card-bg);
+  backdrop-filter: blur(10px);
+  border-radius: 1rem;
+  border: 1px solid var(--border-color);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.snapshots-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.snapshots-header h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.snapshots-header p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.snapshots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.snapshot-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.snapshot-card:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  background: var(--bg-tertiary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.snapshot-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.snapshot-date {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.snapshot-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.snapshot-file {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 768px) {
   .upload-card {
     padding: 1.5rem;
@@ -437,6 +578,10 @@ const loadMockData = async () => {
 
   .btn {
     min-width: 100%;
+  }
+
+  .snapshots-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
