@@ -475,6 +475,12 @@ const poolPowerChartOptions = {
         indica combien de pouvoir tu obtiens pour 1 REG en pool : au-dessus de 1x → boost, en dessous
         → performance réduite.
       </p>
+      <p class="axis-note">
+        Rappel : pour 1 REG dans un pool concentré, le boost V3 est plafonné à 5, puis multiplié par
+        le multiplicateur REG (4). Donc 1 REG peut générer jusqu’à 1 × 5 × 4 = 20 unités de power. Les
+        pics proches de 20 dans le ratio « power ÷ REG » reflètent bien ce cumul boost × multiplier, pas
+        uniquement le boost V3 pur.
+      </p>
     </div>
 
     <div
