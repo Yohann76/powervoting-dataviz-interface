@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
 import { Bar, Doughnut, Line } from 'vue-chartjs'
@@ -30,6 +30,7 @@ ChartJS.register(
 
 const router = useRouter()
 const dataStore = useDataStore()
+const expandedWallets = ref<Record<string, boolean>>({})
 
 onMounted(() => {
   if (dataStore.balances.length === 0 || dataStore.powerVoting.length === 0) {
@@ -46,6 +47,14 @@ const formatNumber = (num: number) => {
 
 const formatInteger = (num: number) => {
   return new Intl.NumberFormat('fr-FR').format(Math.round(num))
+}
+
+const isWalletExpanded = (address: string) => {
+  return !!expandedWallets.value[address]
+}
+
+const toggleWalletPositions = (address: string) => {
+  expandedWallets.value[address] = !isWalletExpanded(address)
 }
 
 const formatAddress = (address: string) => {
@@ -520,6 +529,21 @@ const poolPowerChartOptions = {
       </p>
     </div>
 
+    <div class="pool-wallet-summary" v-if="dataStore.poolWalletBreakdown">
+      <div class="summary-item">
+        <span class="summary-label">Wallets V2</span>
+        <span class="summary-value">{{ formatInteger(dataStore.poolWalletBreakdown.v2Wallets) }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Wallets V3</span>
+        <span class="summary-value">{{ formatInteger(dataStore.poolWalletBreakdown.v3Wallets) }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Wallets V2 &amp; V3</span>
+        <span class="summary-value">{{ formatInteger(dataStore.poolWalletBreakdown.both) }}</span>
+      </div>
+    </div>
+
     <div
       class="correlation-table"
       v-if="dataStore.poolPowerCorrelation && dataStore.poolPowerCorrelation.length"
@@ -539,10 +563,6 @@ const poolPowerChartOptions = {
             <span class="metric-value">{{ formatNumber(profile.poolLiquidityREG) }}</span>
           </div>
           <div class="metric">
-            <span class="metric-label">Power (attribué pools)</span>
-            <span class="metric-value">{{ formatNumber(profile.poolVotingShare) }}</span>
-          </div>
-          <div class="metric">
             <span class="metric-label">Power total</span>
             <span class="metric-value">{{ formatNumber(profile.powerVoting) }}</span>
           </div>
@@ -552,26 +572,41 @@ const poolPowerChartOptions = {
               {{ profile.boostMultiplier ? profile.boostMultiplier.toFixed(2) + 'x' : '–' }}
             </span>
           </div>
-          <div class="metric">
-            <span class="metric-label">Wallet hors pools</span>
-            <span class="metric-value">{{ formatNumber(profile.walletDirectREG) }}</span>
+          <div class="metric positions-count">
+            <span class="metric-label">Positions</span>
+            <span class="metric-value">{{ profile.positions.length }}</span>
           </div>
-        </div>
-        <div class="positions-list">
-          <div
-            class="position-pill"
-            v-for="position in profile.positions.slice(0, 3)"
-            :key="`${profile.address}-${position.poolAddress || 'pool'}-${position.dex}`"
+          <button
+            class="positions-toggle"
+            @click="toggleWalletPositions(profile.address)"
           >
-            <span class="pill-dex">{{ position.dex }} • {{ position.poolType.toUpperCase() }}</span>
-            <span class="pill-pool">
-              {{ position.poolAddress ? formatAddress(position.poolAddress) : 'N/A' }}
-            </span>
-            <span class="pill-value">{{ formatNumber(position.regAmount) }} REG</span>
+            {{ isWalletExpanded(profile.address) ? 'Masquer les détails' : 'Afficher les détails' }}
+          </button>
+        </div>
+        <div class="row-details" v-if="isWalletExpanded(profile.address)">
+          <div class="detail-metrics">
+            <div class="metric">
+              <span class="metric-label">Power (attribué pools)</span>
+              <span class="metric-value">{{ formatNumber(profile.poolVotingShare) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Wallet hors pools</span>
+              <span class="metric-value">{{ formatNumber(profile.walletDirectREG) }}</span>
+            </div>
           </div>
-          <span class="pill-more" v-if="profile.positions.length > 3">
-            +{{ profile.positions.length - 3 }} positions
-          </span>
+          <div class="positions-list">
+            <div
+              class="position-pill"
+              v-for="position in profile.positions"
+              :key="`${profile.address}-${position.poolAddress || 'pool'}-${position.dex}-${position.regAmount}`"
+            >
+              <span class="pill-dex">{{ position.dex }} • {{ position.poolType.toUpperCase() }}</span>
+              <span class="pill-pool">
+                {{ position.poolAddress ? formatAddress(position.poolAddress) : 'N/A' }}
+              </span>
+              <span class="pill-value">{{ formatNumber(position.regAmount) }} REG</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -758,6 +793,36 @@ const poolPowerChartOptions = {
   line-height: 1.6;
 }
 
+.pool-wallet-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-item {
+  flex: 1 1 200px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: var(--shadow-md);
+}
+
+.summary-label {
+  display: block;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.summary-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .chart-explainer {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
@@ -874,6 +939,42 @@ const poolPowerChartOptions = {
   justify-content: space-between;
 }
 
+.positions-count .metric-value {
+  color: var(--secondary-color);
+}
+
+.positions-toggle {
+  margin-left: auto;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.positions-toggle:hover {
+  background: var(--primary-color);
+  color: #0f172a;
+}
+
+.row-details {
+  margin-top: 1.25rem;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
 .address-block {
   display: flex;
   flex-direction: column;
@@ -982,6 +1083,14 @@ const poolPowerChartOptions = {
   .row-main {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .positions-toggle {
+    width: 100%;
+  }
+
+  .pool-wallet-summary {
+    flex-direction: column;
   }
 }
 

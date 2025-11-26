@@ -314,6 +314,29 @@ export const useDataStore = defineStore('data', () => {
       .sort((a, b) => b.poolLiquidityREG - a.poolLiquidityREG)
   })
 
+  const poolWalletBreakdown = computed(() => {
+    if (addressPoolProfiles.value.length === 0) return null
+
+    let v2Wallets = 0
+    let v3Wallets = 0
+    let both = 0
+
+    addressPoolProfiles.value.forEach((profile) => {
+      const hasV2 = profile.positions.some((position) => position.poolType === 'v2')
+      const hasV3 = profile.positions.some((position) => position.poolType === 'v3')
+
+      if (hasV2) v2Wallets++
+      if (hasV3) v3Wallets++
+      if (hasV2 && hasV3) both++
+    })
+
+    return {
+      v2Wallets,
+      v3Wallets,
+      both,
+    }
+  })
+
   function setBalancesData(data: any) {
     rawBalancesData.value = data
   }
@@ -339,6 +362,7 @@ export const useDataStore = defineStore('data', () => {
     poolAnalysis,
     addressPoolProfiles,
     poolPowerCorrelation,
+    poolWalletBreakdown,
     setBalancesData,
     setPowerVotingData,
     clearData,
