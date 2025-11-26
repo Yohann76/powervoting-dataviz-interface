@@ -224,8 +224,82 @@ export const useDataStore = defineStore('data', () => {
     return {
       v2: v2Stats,
       v3: v3Stats,
-      totalPools: pools.size
+      totalPools: pools.size,
     }
+  })
+
+  const addressPoolProfiles = computed<AddressPoolProfile[]>(() => {
+    if (balances.value.length === 0) return []
+
+    return balances.value
+      .map((wallet) => {
+        const networks = wallet.sourceBalance
+        if (!networks) return null
+
+        const positions: AddressPoolPosition[] = []
+
+        Object.entries(networks).forEach(([networkName, networkValue]: [string, any]) => {
+          const dexs = networkValue?.dexs
+          if (!dexs) return
+
+          Object.entries(dexs).forEach(([dexName, rawPositions]: [string, any]) => {
+            if (!Array.isArray(rawPositions)) return
+
+            rawPositions.forEach((pos: PoolPosition) => {
+              const regAmount = parseFloat(String(pos.equivalentREG || '0'))
+              if (regAmount <= 0) return
+
+              const poolType: 'v2' | 'v3' =
+                pos.tickLower !== undefined && pos.tickUpper !== undefined ? 'v3' : 'v2'
+
+              positions.push({
+                ...pos,
+                dex: dexName,
+                network: networkName,
+                poolType,
+                regAmount,
+              })
+            })
+          })
+        })
+
+        if (positions.length === 0) return null
+
+        const totalLiquidity = positions.reduce((sum, pos) => sum + pos.regAmount, 0)
+        const dexCount = new Set(positions.map((pos) => `${pos.network}-${pos.dex}`)).size
+
+        return {
+          address: wallet.walletAddress,
+          poolLiquidityREG: totalLiquidity,
+          poolCount: positions.length,
+          dexCount,
+          positions,
+        }
+      })
+      .filter((profile): profile is AddressPoolProfile => profile !== null)
+  })
+
+  const poolPowerCorrelation = computed<PoolPowerCorrelation[]>(() => {
+    if (addressPoolProfiles.value.length === 0 || powerVoting.value.length === 0) return []
+
+    const powerMap = new Map(
+      powerVoting.value.map((entry) => [
+        (entry.address || '').toLowerCase(),
+        parseFloat(String(entry.powerVoting || 0)),
+      ]),
+    )
+
+    return addressPoolProfiles.value
+      .map((profile) => {
+        const powerValue = powerMap.get(profile.address.toLowerCase()) || 0
+
+        return {
+          ...profile,
+          powerVoting: powerValue,
+        }
+      })
+      .filter((item) => item.powerVoting > 0)
+      .sort((a, b) => b.poolLiquidityREG - a.poolLiquidityREG)
   })
 
   function setBalancesData(data: any) {
@@ -251,6 +325,8 @@ export const useDataStore = defineStore('data', () => {
     topBalanceHolders,
     topPowerVoters,
     poolAnalysis,
+    addressPoolProfiles,
+    poolPowerCorrelation,
     setBalancesData,
     setPowerVotingData,
     clearData,
@@ -274,4 +350,23 @@ interface PoolStats {
   totalREG: number
   count: number
   dexs: Record<string, number>
+}
+
+interface AddressPoolPosition extends PoolPosition {
+  dex: string
+  network: string
+  poolType: 'v2' | 'v3'
+  regAmount: number
+}
+
+interface AddressPoolProfile {
+  address: string
+  poolLiquidityREG: number
+  positions: AddressPoolPosition[]
+  poolCount: number
+  dexCount: number
+}
+
+interface PoolPowerCorrelation extends AddressPoolProfile {
+  powerVoting: number
 }

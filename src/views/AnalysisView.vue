@@ -164,6 +164,40 @@ const dexsDistributionChartData = computed(() => {
   }
 })
 
+const poolPowerChartData = computed(() => {
+  const correlation = dataStore.poolPowerCorrelation
+  if (!correlation || correlation.length === 0) return null
+
+  const topEntries = correlation.slice(0, 25)
+  const labels = topEntries.map((entry) => formatAddress(entry.address))
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Liquidité en pool (REG)',
+        data: topEntries.map((entry) => entry.poolLiquidityREG),
+        borderColor: 'rgba(34, 197, 94, 1)',
+        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+        tension: 0.3,
+        fill: false,
+        yAxisID: 'yPool',
+        pointRadius: 4,
+      },
+      {
+        label: 'Power Voting',
+        data: topEntries.map((entry) => entry.powerVoting),
+        borderColor: 'rgba(236, 72, 153, 1)',
+        backgroundColor: 'rgba(236, 72, 153, 0.2)',
+        tension: 0.3,
+        fill: false,
+        yAxisID: 'yPower',
+        pointRadius: 4,
+      },
+    ],
+  }
+})
+
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -203,6 +237,41 @@ const chartOptions = {
       },
       grid: {
         color: 'rgba(51, 65, 85, 0.3)',
+      },
+    },
+  },
+}
+
+const poolPowerChartOptions = {
+  ...chartOptions,
+  interaction: { mode: 'index', intersect: false },
+  scales: {
+    x: {
+      ticks: {
+        color: '#cbd5e1',
+      },
+      grid: {
+        color: 'rgba(51, 65, 85, 0.3)',
+      },
+    },
+    yPool: {
+      type: 'linear',
+      position: 'left',
+      ticks: {
+        color: '#22c55e',
+      },
+      grid: {
+        color: 'rgba(34, 197, 94, 0.15)',
+      },
+    },
+    yPower: {
+      type: 'linear',
+      position: 'right',
+      ticks: {
+        color: '#ec4899',
+      },
+      grid: {
+        drawOnChartArea: false,
       },
     },
   },
@@ -362,6 +431,69 @@ const chartOptions = {
       </div>
     </div>
 
+    <div class="section-header">
+      <h2>🔗 Corrélation Pools & Power Voting</h2>
+      <p>Impact des positions de liquidité (V2/V3) sur le pouvoir de vote.</p>
+    </div>
+
+    <div class="charts-grid correlation-grid">
+      <div class="chart-card full-width">
+        <h3>📉 Courbe Liquidité vs Power Voting</h3>
+        <div class="chart-container" v-if="poolPowerChartData">
+          <Line :data="poolPowerChartData" :options="poolPowerChartOptions" />
+        </div>
+        <div class="chart-empty" v-else>
+          <p>Aucune adresse active en pool n'a été détectée.</p>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="correlation-table"
+      v-if="dataStore.poolPowerCorrelation && dataStore.poolPowerCorrelation.length"
+    >
+      <div
+        class="correlation-row"
+        v-for="profile in dataStore.poolPowerCorrelation.slice(0, 8)"
+        :key="profile.address"
+      >
+        <div class="row-main">
+          <div class="address-block">
+            <span class="address-short">{{ formatAddress(profile.address) }}</span>
+            <span class="address-full">{{ profile.address }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Liquidité en pools</span>
+            <span class="metric-value">{{ formatNumber(profile.poolLiquidityREG) }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Power Voting</span>
+            <span class="metric-value">{{ formatNumber(profile.powerVoting) }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Positions / DEX</span>
+            <span class="metric-value">{{ profile.poolCount }} / {{ profile.dexCount }}</span>
+          </div>
+        </div>
+        <div class="positions-list">
+          <div
+            class="position-pill"
+            v-for="position in profile.positions.slice(0, 3)"
+            :key="`${profile.address}-${position.poolAddress || 'pool'}-${position.dex}`"
+          >
+            <span class="pill-dex">{{ position.dex }} • {{ position.poolType.toUpperCase() }}</span>
+            <span class="pill-pool">
+              {{ position.poolAddress ? formatAddress(position.poolAddress) : 'N/A' }}
+            </span>
+            <span class="pill-value">{{ formatNumber(position.regAmount) }} REG</span>
+          </div>
+          <span class="pill-more" v-if="profile.positions.length > 3">
+            +{{ profile.positions.length - 3 }} positions
+          </span>
+        </div>
+      </div>
+    </div>
+
     <!-- Top Holders -->
     <div class="top-holders-grid">
       <div class="top-card">
@@ -517,6 +649,25 @@ const chartOptions = {
   height: 350px;
 }
 
+.chart-card.full-width {
+  grid-column: 1 / -1;
+}
+
+.correlation-grid {
+  grid-template-columns: 1fr;
+}
+
+.chart-empty {
+  height: 350px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: var(--glass-bg);
+  border: 1px dashed var(--border-color);
+  border-radius: 0.75rem;
+}
+
 .top-holders-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -585,6 +736,105 @@ const chartOptions = {
   text-align: right;
 }
 
+.correlation-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.correlation-row {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+  justify-content: space-between;
+}
+
+.address-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.address-short {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.address-full {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 120px;
+}
+
+.metric-label {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.positions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.position-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.pill-dex {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.pill-pool {
+  font-family: 'Courier New', monospace;
+  color: var(--text-secondary);
+}
+
+.pill-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pill-more {
+  align-self: center;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 .no-data {
   text-align: center;
   padding: 4rem 2rem;
@@ -612,6 +862,11 @@ const chartOptions = {
 
   .analysis-header h2 {
     font-size: 1.75rem;
+  }
+
+  .row-main {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
