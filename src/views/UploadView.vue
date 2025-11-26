@@ -136,6 +136,17 @@ const formatSnapshotDate = (dateStr: string) => {
     year: 'numeric',
   })
 }
+
+const formatNumber = (num: number) => {
+  return new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num)
+}
+
+const formatInteger = (num: number) => {
+  return new Intl.NumberFormat('fr-FR').format(Math.round(num))
+}
 </script>
 
 <template>
@@ -206,16 +217,41 @@ const formatSnapshotDate = (dateStr: string) => {
         <h3>📸 Snapshots historiques ({{ snapshots.length }})</h3>
         <p>Chargez un snapshot précédent pour analyse ou comparaison</p>
       </div>
-      <div class="snapshots-grid">
+      <div class="snapshots-list">
         <button
           v-for="snapshot in snapshots"
           :key="snapshot.date"
           @click="loadSnapshotData(snapshot)"
           :disabled="isLoading"
-          class="snapshot-card"
+          class="snapshot-row"
         >
-          <div class="snapshot-date">{{ formatSnapshotDate(snapshot.date) }}</div>
-          <div class="snapshot-files">
+          <div class="snapshot-date-col">
+            <div class="snapshot-date">{{ formatSnapshotDate(snapshot.date) }}</div>
+          </div>
+          <div class="snapshot-metrics-row" v-if="snapshot.metrics">
+            <div class="snapshot-metric-item">
+              <span class="metric-icon">👥</span>
+              <div class="metric-content">
+                <span class="metric-value">{{ formatInteger(snapshot.metrics.walletCount) }}</span>
+                <span class="metric-label">wallets</span>
+              </div>
+            </div>
+            <div class="snapshot-metric-item">
+              <span class="metric-icon">💰</span>
+              <div class="metric-content">
+                <span class="metric-value">{{ formatNumber(snapshot.metrics.totalREG) }}</span>
+                <span class="metric-label">REG</span>
+              </div>
+            </div>
+            <div class="snapshot-metric-item">
+              <span class="metric-icon">⚡</span>
+              <div class="metric-content">
+                <span class="metric-value">{{ formatNumber(snapshot.metrics.totalPowerVoting) }}</span>
+                <span class="metric-label">Power</span>
+              </div>
+            </div>
+          </div>
+          <div class="snapshot-files" v-else>
             <span class="snapshot-file">📄 {{ snapshot.balancesFile }}</span>
             <span class="snapshot-file">⚡ {{ snapshot.powerVotingFile }}</span>
           </div>
@@ -507,41 +543,85 @@ const formatSnapshotDate = (dateStr: string) => {
   font-size: 0.95rem;
 }
 
-.snapshots-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.snapshot-card {
-  background: var(--glass-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 0.75rem;
-  padding: 1.25rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  text-align: left;
+.snapshots-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.snapshot-card:hover:not(:disabled) {
+.snapshot-row {
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 2rem;
+  align-items: center;
+  text-align: left;
+}
+
+.snapshot-row:hover:not(:disabled) {
   border-color: var(--primary-color);
   background: var(--bg-tertiary);
-  transform: translateY(-2px);
+  transform: translateX(4px);
   box-shadow: var(--shadow-md);
 }
 
-.snapshot-card:disabled {
+.snapshot-row:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.snapshot-date-col {
+  display: flex;
+  align-items: center;
 }
 
 .snapshot-date {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 1rem;
+}
+
+.snapshot-metrics-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  align-items: center;
+}
+
+.snapshot-metric-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.metric-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.metric-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.metric-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .snapshot-files {
@@ -580,8 +660,14 @@ const formatSnapshotDate = (dateStr: string) => {
     min-width: 100%;
   }
 
-  .snapshots-grid {
+  .snapshot-row {
     grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .snapshot-metrics-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 }
 </style>

@@ -35,11 +35,48 @@ function generateManifest() {
       const parts = dateDir.split('-')
       const dateFormatted = `${parts[2]}-${parts[1]}-${parts[0]}`
 
+      // Calculate metrics from files
+      let walletCount = 0
+      let totalREG = 0
+      let totalPowerVoting = 0
+
+      try {
+        // Read balances file
+        const balancesPath = path.join(datePath, balancesFile)
+        const balancesData = JSON.parse(fs.readFileSync(balancesPath, 'utf8'))
+        const balances = balancesData.result?.balances || balancesData
+        const balancesArray = Array.isArray(balances) ? balances : []
+
+        walletCount = balancesArray.length
+        totalREG = balancesArray.reduce((sum, b) => {
+          const reg = parseFloat(String(b.totalBalanceREG || b.totalBalance || 0))
+          return sum + (isNaN(reg) ? 0 : reg)
+        }, 0)
+
+        // Read power voting file
+        const powerPath = path.join(datePath, powerFile)
+        const powerData = JSON.parse(fs.readFileSync(powerPath, 'utf8'))
+        const powerVoting = powerData.result?.powerVoting || powerData
+        const powerArray = Array.isArray(powerVoting) ? powerVoting : []
+
+        totalPowerVoting = powerArray.reduce((sum, p) => {
+          const power = parseFloat(String(p.powerVoting || 0))
+          return sum + (isNaN(power) ? 0 : power)
+        }, 0)
+      } catch (err) {
+        console.warn(`⚠️  Could not calculate metrics for ${dateDir}:`, err.message)
+      }
+
       snapshots.push({
         date: dateDir,
         dateFormatted,
         balancesFile,
         powerVotingFile: powerFile,
+        metrics: {
+          walletCount,
+          totalREG: Math.round(totalREG * 100) / 100, // Round to 2 decimals
+          totalPowerVoting: Math.round(totalPowerVoting * 100) / 100,
+        },
       })
     }
   }

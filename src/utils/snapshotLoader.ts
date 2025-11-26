@@ -3,6 +3,11 @@ export interface SnapshotInfo {
   dateFormatted: string
   balancesFile: string
   powerVotingFile: string
+  metrics?: {
+    walletCount: number
+    totalREG: number
+    totalPowerVoting: number
+  }
 }
 
 // Load snapshot manifest
@@ -17,6 +22,7 @@ export async function loadSnapshotManifest(): Promise<SnapshotInfo[]> {
           dateFormatted: s.dateFormatted || formatDate(s.date),
           balancesFile: s.balancesFile,
           powerVotingFile: s.powerVotingFile,
+          metrics: s.metrics,
         }))
         .sort((a: SnapshotInfo, b: SnapshotInfo) => {
           // Sort by date descending (newest first)
