@@ -1,17 +1,24 @@
-# 📊 Power Voting REG - Data Visualization Interface
+# 📊 Power Voting REG – Data Visualization Interface
 
-Interface moderne de visualisation et d'analyse des données de balances REG et de pouvoir de vote pour RealT.
+Lightweight dashboard to upload REG balances and voting-power exports, run instant stats, and spot how liquidity positions translate into voting weight.
 
-## 🚀 Fonctionnalités
+## 🚀 Key Features
 
-- **Upload de fichiers** : Support des formats CSV et JSON
-- **Analyse statistique** : Calcul automatique de moyennes, médianes, écarts-types
-- **Visualisations interactives** : Graphiques de distribution avec Chart.js
-- **Top holders** : Liste des 10 plus grandes balances et pouvoir de vote
-- **Données d'exemple** : Chargement rapide avec fichiers mock
-- **Design moderne** : Interface sombre avec glassmorphism et gradients
+- File uploads (CSV/JSON) for balances and power data
+- Automatic stats: totals, medians, min/max, standard deviation
+- Interactive charts (distribution, pool vs power correlation)
+- Top holders lists for balances and voting power
+- Mock data loader for quick demos
+- Dark UI with modern gradients and glass effects
 
-## 📁 Structure des données
+## 🚀 Running
+
+```
+make dev-build
+make dev-run
+```
+
+## 📁 Data Model
 
 ### Balances REG
 
@@ -23,8 +30,7 @@ Interface moderne de visualisation et d'analyse des données de balances REG et 
         "walletAddress": "0x...",
         "type": "wallet",
         "totalBalanceREG": "100",
-        "totalBalanceEquivalentREG": "0",
-        ...
+        "totalBalanceEquivalentREG": "0"
       }
     ]
   }
@@ -46,122 +52,79 @@ Interface moderne de visualisation et d'analyse des données de balances REG et 
 }
 ```
 
-## 🛠️ Technologies
+## 🛠 Tech Stack
 
-- **Vue 3** - Framework JavaScript progressif
-- **TypeScript** - Typage statique
-- **Vite** - Build tool rapide
-- **Pinia** - State management
-- **Vue Router** - Routing
-- **Chart.js** - Graphiques
-- **PapaParse** - Parsing CSV
+- Vue 3 + TypeScript + Vite
+- Pinia + Vue Router
+- Chart.js + vue-chartjs
+- PapaParse for CSV parsing
 
-## 📦 Installation
+## ⚙️ Getting Started
 
 ```bash
-# Installation des dépendances
+# install dependencies
 npm install
 
-# Démarrage en mode développement
+# start dev server
 npm run dev
 
-# Build pour production
+# production build
 npm run build
 
-# Prévisualisation du build
+# preview build
 npm run preview
 
-# test
+# tests
 npm run test
 ```
 
-## 🎯 Utilisation
+## 🎯 How to Use
 
-1. **Page d'accueil** - Upload de vos fichiers ou utilisation des données d'exemple
-2. **Page d'analyse** - Visualisation automatique des statistiques et graphiques
+1. Home page: upload your `balancesREG` and `powerVotingREG` files (CSV/JSON) or load the mock data.
+2. Analysis page: explore the computed stats, top lists, pool vs power correlation chart, and detailed tables.
 
-### Upload de fichiers
+### Sample Files
 
-- Sélectionnez un fichier balancesREG (CSV ou JSON)
-- Sélectionnez un fichier powerVotingREG (CSV ou JSON)
-- Cliquez sur "Analyser les données"
+Click “Use sample data” to load the JSON fixtures stored in `/mock/`.
 
-### Données d'exemple
+## 📊 Metrics & Visuals
 
-Cliquez sur "Utiliser les données exemples" pour charger automatiquement les fichiers mock situés dans `/mock/`.
+- Totals, averages, medians, min/max, standard deviation
+- Distribution buckets for balances and voting power
+- Pool V2/V3 liquidity split, DEX allocation, correlation charts
+- Boost view (power per REG vs 1:1 reference line)
 
-## 📊 Statistiques calculées
-
-- **Total** : Somme de toutes les valeurs
-- **Moyenne** : Moyenne arithmétique
-- **Médiane** : Valeur médiane
-- **Min/Max** : Valeurs minimale et maximale
-- **Écart-type** : Mesure de dispersion
-- **Distribution** : Répartition par tranches
-
-## 🎨 Design
-
-L'interface utilise une palette de couleurs modernes avec :
-- Fond sombre (dark mode)
-- Gradients de couleur (primary, secondary, accent)
-- Effets de glassmorphism
-- Animations fluides
-- Design responsive
-
-## 📝 Scripts disponibles
-
-- `npm run dev` - Serveur de développement
-- `npm run build` - Build de production
-- `npm run preview` - Prévisualisation du build
-- `npm run type-check` - Vérification TypeScript
-- `npm run format` - Formatage du code avec Prettier
-
-## 🔧 Configuration
-
-Le projet est configuré avec :
-- ESLint pour la qualité du code
-- Prettier pour le formatage
-- TypeScript pour le typage
-- Vite pour le bundling
-
-## 📂 Structure du projet
+## 🧱 Project Structure
 
 ```
 src/
-├── views/
-│   ├── UploadView.vue      # Page d'upload
-│   └── AnalysisView.vue    # Page d'analyse
-├── stores/
-│   └── dataStore.ts        # Store Pinia
-├── router/
-│   └── index.ts            # Configuration routes
-├── App.vue                 # Composant principal
-└── main.ts                 # Point d'entrée
+├── views/              # Upload + Analysis screens
+├── stores/             # Pinia store
+├── router/             # Routing
+├── App.vue             # Root component
+└── main.ts             # Entry point
 
 mock/
-├── balancesREG_*.json      # Données exemple balances
-└── powerVotingREG_*.json   # Données exemple power voting
+├── balancesREG_*.json
+└── powerVotingREG_*.json
 ```
 
-## 🌐 Déploiement
-
-Pour déployer en production :
+## 🌐 Deployment
 
 ```bash
 npm run build
 ```
 
-Les fichiers optimisés seront générés dans le dossier `dist/`.
+Optimized assets are generated in `dist/`.
 
-## 📄 Licence
+## 📄 License
 
-Projet RealT - 2025
+RealT Project – 2025
 
-## 👥 Contribution
+## 🤝 Contributing
 
-Pour contribuer au projet :
-1. Fork le projet
-2. Créez une branche (`git checkout -b feature/amazing-feature`)
-3. Committez vos changements (`git commit -m 'Add amazing feature'`)
-4. Pushez vers la branche (`git push origin feature/amazing-feature`)
-5. Ouvrez une Pull Request
+1. Fork the repo  
+2. Create a feature branch `git checkout -b feature/my-feature`  
+3. Commit `git commit -m "Add my feature"`  
+4. Push `git push origin feature/my-feature`  
+5. Open a Pull Request  
