@@ -171,28 +171,47 @@ const poolPowerChartData = computed(() => {
   const topEntries = correlation.slice(0, 25)
   const labels = topEntries.map((entry) => formatAddress(entry.address))
 
+  const ratioPools = topEntries.map((entry) => {
+    if (entry.poolLiquidityREG <= 0) return 0
+    return entry.poolVotingShare / entry.poolLiquidityREG
+  })
+
+  const ratioTotal = topEntries.map((entry) => {
+    if (entry.poolLiquidityREG <= 0) return 0
+    return entry.powerVoting / entry.poolLiquidityREG
+  })
+
+  const baseline = topEntries.map((entry) => (entry.poolLiquidityREG > 0 ? 1 : 0))
+
   return {
     labels,
     datasets: [
       {
-        label: 'Liquidité en pool (REG)',
-        data: topEntries.map((entry) => entry.poolLiquidityREG),
-        borderColor: 'rgba(34, 197, 94, 1)',
-        backgroundColor: 'rgba(34, 197, 94, 0.2)',
-        tension: 0.3,
+        label: 'Boost pools (Power ÷ REG)',
+        data: ratioPools,
+        borderColor: 'rgba(59, 130, 246, 1)',
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+        tension: 0.25,
         fill: false,
-        yAxisID: 'yPool',
         pointRadius: 4,
       },
       {
-        label: 'Power Voting',
-        data: topEntries.map((entry) => entry.powerVoting),
+        label: 'Power total ÷ REG en pool',
+        data: ratioTotal,
         borderColor: 'rgba(236, 72, 153, 1)',
-        backgroundColor: 'rgba(236, 72, 153, 0.2)',
-        tension: 0.3,
+        backgroundColor: 'rgba(236, 72, 153, 0.15)',
+        tension: 0.25,
         fill: false,
-        yAxisID: 'yPower',
         pointRadius: 4,
+      },
+      {
+        label: 'Référence 1:1',
+        data: baseline,
+        borderColor: 'rgba(148, 163, 184, 0.8)',
+        borderDash: [8, 6],
+        tension: 0,
+        fill: false,
+        pointRadius: 0,
       },
     ],
   }
@@ -254,24 +273,13 @@ const poolPowerChartOptions = {
         color: 'rgba(51, 65, 85, 0.3)',
       },
     },
-    yPool: {
-      type: 'linear',
-      position: 'left',
+    y: {
+      beginAtZero: true,
       ticks: {
-        color: '#22c55e',
+        color: '#cbd5e1',
       },
       grid: {
-        color: 'rgba(34, 197, 94, 0.15)',
-      },
-    },
-    yPower: {
-      type: 'linear',
-      position: 'right',
-      ticks: {
-        color: '#ec4899',
-      },
-      grid: {
-        drawOnChartArea: false,
+        color: 'rgba(51, 65, 85, 0.25)',
       },
     },
   },
@@ -433,7 +441,10 @@ const poolPowerChartOptions = {
 
     <div class="section-header">
       <h2>🔗 Corrélation Pools & Power Voting</h2>
-      <p>Impact des positions de liquidité (V2/V3) sur le pouvoir de vote.</p>
+      <p>
+        Les courbes comparent désormais des ratios (Power ÷ REG en pool) à la ligne 1 : 1, ce qui
+        permet de visualiser instantanément si une position LP surperforme ou non le boost attendu.
+      </p>
     </div>
 
     <div class="charts-grid correlation-grid">
@@ -448,13 +459,31 @@ const poolPowerChartOptions = {
       </div>
     </div>
 
+    <div class="chart-explainer">
+      <p>
+        Cette visualisation trace trois ratios :
+        <strong>Boost pools</strong> (power réellement issu des pools ÷ REG en pool),
+        <strong>Power total ÷ REG en pool</strong> (incluant la part wallet) et la
+        <strong>ligne de référence 1 : 1</strong>. Lorsque les courbes bleue ou rose passent
+        <em>au-dessus</em> de 1 : 1, cela signifie qu'une adresse obtient plus de pouvoir de vote
+        que sa simple mise en REG (boost). Si elles sont <em>en dessous</em>, la position est moins
+        efficace qu’un dépôt direct (décote / inéligibilité partielle). Les adresses sont triées par
+        liquidité décroissante pour faciliter la comparaison.
+      </p>
+      <p class="axis-note">
+        L’axe vertical (à gauche) représente ce multiplicateur (1x = parité parfaite). Chaque point
+        indica combien de pouvoir tu obtiens pour 1 REG en pool : au-dessus de 1x → boost, en dessous
+        → performance réduite.
+      </p>
+    </div>
+
     <div
       class="correlation-table"
       v-if="dataStore.poolPowerCorrelation && dataStore.poolPowerCorrelation.length"
     >
       <div
         class="correlation-row"
-        v-for="profile in dataStore.poolPowerCorrelation.slice(0, 8)"
+        v-for="profile in dataStore.poolPowerCorrelation.slice(0, 15)"
         :key="profile.address"
       >
         <div class="row-main">
@@ -467,12 +496,22 @@ const poolPowerChartOptions = {
             <span class="metric-value">{{ formatNumber(profile.poolLiquidityREG) }}</span>
           </div>
           <div class="metric">
-            <span class="metric-label">Power Voting</span>
+            <span class="metric-label">Power (attribué pools)</span>
+            <span class="metric-value">{{ formatNumber(profile.poolVotingShare) }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Power total</span>
             <span class="metric-value">{{ formatNumber(profile.powerVoting) }}</span>
           </div>
           <div class="metric">
-            <span class="metric-label">Positions / DEX</span>
-            <span class="metric-value">{{ profile.poolCount }} / {{ profile.dexCount }}</span>
+            <span class="metric-label">Boost vs 1:1</span>
+            <span class="metric-value">
+              {{ profile.boostMultiplier ? profile.boostMultiplier.toFixed(2) + 'x' : '–' }}
+            </span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Wallet hors pools</span>
+            <span class="metric-value">{{ formatNumber(profile.walletDirectREG) }}</span>
           </div>
         </div>
         <div class="positions-list">
@@ -666,6 +705,31 @@ const poolPowerChartOptions = {
   background: var(--glass-bg);
   border: 1px dashed var(--border-color);
   border-radius: 0.75rem;
+}
+
+.chart-explainer {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 2rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  box-shadow: var(--shadow-md);
+}
+
+.chart-explainer strong {
+  color: var(--text-primary);
+}
+
+.chart-explainer em {
+  color: var(--accent-color);
+}
+
+.chart-explainer .axis-note {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
 }
 
 .top-holders-grid {

@@ -268,8 +268,11 @@ export const useDataStore = defineStore('data', () => {
         const totalLiquidity = positions.reduce((sum, pos) => sum + pos.regAmount, 0)
         const dexCount = new Set(positions.map((pos) => `${pos.network}-${pos.dex}`)).size
 
+        const totalWalletREG = parseFloat(String(wallet.totalBalanceREG || wallet.totalBalance || 0)) || 0
+
         return {
           address: wallet.walletAddress,
+          walletREG: totalWalletREG,
           poolLiquidityREG: totalLiquidity,
           poolCount: positions.length,
           dexCount,
@@ -292,10 +295,19 @@ export const useDataStore = defineStore('data', () => {
     return addressPoolProfiles.value
       .map((profile) => {
         const powerValue = powerMap.get(profile.address.toLowerCase()) || 0
+        const walletDirectREG = Math.max(profile.walletREG - profile.poolLiquidityREG, 0)
+        const walletVotingShare = Math.min(powerValue, walletDirectREG)
+        const poolVotingShare = Math.max(powerValue - walletDirectREG, 0)
+        const boostMultiplier =
+          profile.poolLiquidityREG > 0 ? poolVotingShare / profile.poolLiquidityREG : 0
 
         return {
           ...profile,
           powerVoting: powerValue,
+          walletDirectREG,
+          walletVotingShare,
+          poolVotingShare,
+          boostMultiplier,
         }
       })
       .filter((item) => item.powerVoting > 0)
@@ -361,6 +373,7 @@ interface AddressPoolPosition extends PoolPosition {
 
 interface AddressPoolProfile {
   address: string
+  walletREG: number
   poolLiquidityREG: number
   positions: AddressPoolPosition[]
   poolCount: number
@@ -369,4 +382,8 @@ interface AddressPoolProfile {
 
 interface PoolPowerCorrelation extends AddressPoolProfile {
   powerVoting: number
+  walletDirectREG: number
+  walletVotingShare: number
+  poolVotingShare: number
+  boostMultiplier: number
 }
