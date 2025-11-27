@@ -257,7 +257,7 @@ const poolPowerChartData = computed(() => {
         pointRadius: 4,
       },
       {
-        label: 'Power total ÷ REG total',
+        label: 'Multiplicateur moyen global (wallet 1:1 + pools boostés)',
         data: ratioTotal,
         borderColor: 'rgba(236, 72, 153, 1)',
         backgroundColor: 'rgba(236, 72, 153, 0.15)',
@@ -543,7 +543,7 @@ const poolPowerChartOptions = {
 
     <div class="charts-grid correlation-grid">
       <div class="chart-card full-width">
-        <h3>📉 Courbe Liquidité vs Power Voting</h3>
+        <h3>📉 Efficacité des positions LP : Multiplicateurs Power ÷ REG par adresse</h3>
         <div class="chart-container" v-if="poolPowerChartData">
           <Line :data="poolPowerChartData" :options="poolPowerChartOptions" />
         </div>
