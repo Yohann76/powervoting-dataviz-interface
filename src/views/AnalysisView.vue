@@ -236,8 +236,10 @@ const poolPowerChartData = computed(() => {
   })
 
   const ratioTotal = topEntries.map((entry) => {
-    if (entry.poolLiquidityREG <= 0) return 0
-    return entry.powerVoting / entry.poolLiquidityREG
+    const totalREG = entry.walletDirectREG + entry.poolLiquidityREG
+    if (totalREG <= 0) return 0
+    // Option A: Ratio total sur REG total (wallet + pools) pour montrer le multiplicateur moyen
+    return entry.powerVoting / totalREG
   })
 
   const baseline = topEntries.map((entry) => (entry.poolLiquidityREG > 0 ? 1 : 0))
@@ -255,7 +257,7 @@ const poolPowerChartData = computed(() => {
         pointRadius: 4,
       },
       {
-        label: 'Power total ÷ REG en pool',
+        label: 'Power total ÷ REG total',
         data: ratioTotal,
         borderColor: 'rgba(236, 72, 153, 1)',
         backgroundColor: 'rgba(236, 72, 153, 0.15)',
@@ -555,7 +557,7 @@ const poolPowerChartOptions = {
       <p>
         Cette visualisation trace trois ratios :
         <strong>Boost pools</strong> (power réellement issu des pools ÷ REG en pool),
-        <strong>Power total ÷ REG en pool</strong> (incluant la part wallet) et la
+        <strong>Power total ÷ REG total</strong> (power total ÷ (REG wallet + REG en pool)) et la
         <strong>ligne de référence 1 : 1</strong>. Lorsque les courbes bleue ou rose passent
         <em>au-dessus</em> de 1 : 1, cela signifie qu'une adresse obtient plus de pouvoir de vote
         que sa simple mise en REG (boost). Si elles sont <em>en dessous</em>, la position est moins
@@ -563,15 +565,13 @@ const poolPowerChartOptions = {
         liquidité décroissante pour faciliter la comparaison.
       </p>
       <p class="axis-note">
-        L’axe vertical (à gauche) représente ce multiplicateur (1x = parité parfaite). Chaque point
-        indica combien de pouvoir tu obtiens pour 1 REG en pool : au-dessus de 1x → boost, en dessous
-        → performance réduite.
+        L'axe vertical (à gauche) représente ce multiplicateur (1x = parité parfaite).
+        <strong>Ligne bleue</strong> : multiplicateur des pools uniquement (power pools ÷ REG en pool).
+        <strong>Ligne rose</strong> : multiplicateur moyen sur tout le REG (power total ÷ REG total).
+        Au-dessus de 1x → boost, en dessous → performance réduite.
       </p>
       <p class="axis-note">
-        Rappel : pour 1 REG dans un pool concentré, le boost V3 est plafonné à 5, puis multiplié par
-        le multiplicateur REG (4). Donc 1 REG peut générer jusqu’à 1 × 5 × 4 = 20 unités de power. Les
-        pics proches de 20 dans le ratio « power ÷ REG » reflètent bien ce cumul boost × multiplier, pas
-        uniquement le boost V3 pur.
+        Rappel : avec la normalisation du boost V3, pour 1 REG dans un pool concentré, le boost final est de 5 (si MaxBoost = 5 et MinBoost = 1). Pour un range large, le boost est de 4 (équivalent au boost V2). Les deux courbes devraient être similaires car le wallet direct est à 1:1 (pas de boost), donc seul le boost des pools est visible.
       </p>
     </div>
 
