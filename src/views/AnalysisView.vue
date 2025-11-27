@@ -116,7 +116,7 @@ const balanceDistributionChartData = computed(() => {
     labels: dist.map((b) => b.label),
     datasets: [
       {
-        label: 'Nombre de wallets',
+        label: "Nombre d'adresses (wallets)",
         data: dist.map((b) => b.count),
         backgroundColor: [
           'rgba(99, 102, 241, 0.8)',
@@ -339,8 +339,29 @@ const countChartOptions = {
   ...chartOptions,
   scales: {
     ...chartOptions.scales,
+    x: {
+      ...chartOptions.scales.x,
+      title: {
+        display: true,
+        text: 'Tranches de montants (REG équivalents)',
+        color: '#cbd5e1',
+        font: {
+          size: 14,
+          weight: 'bold',
+        },
+      },
+    },
     y: {
       ...chartOptions.scales.y,
+      title: {
+        display: true,
+        text: "Nombre d'adresses (wallets)",
+        color: '#cbd5e1',
+        font: {
+          size: 14,
+          weight: 'bold',
+        },
+      },
       ticks: {
         ...chartOptions.scales.y.ticks,
         callback: (value: number) => formatInteger(Number(value)),
@@ -457,14 +478,14 @@ const poolPowerChartOptions = {
     <!-- Charts -->
     <div class="charts-grid">
       <div class="chart-card">
-        <h3>📈 Distribution des Balances REG</h3>
+        <h3>📈 Distribution des Balances REG par adresse</h3>
         <div class="chart-container" v-if="balanceDistributionChartData">
           <Bar :data="balanceDistributionChartData" :options="countChartOptions" />
         </div>
       </div>
 
       <div class="chart-card">
-        <h3>📊 Distribution du Power Voting</h3>
+        <h3>📊 Distribution du Power Voting par adresse</h3>
         <div class="chart-container" v-if="powerVotingDistributionChartData">
           <Bar :data="powerVotingDistributionChartData" :options="countChartOptions" />
         </div>
