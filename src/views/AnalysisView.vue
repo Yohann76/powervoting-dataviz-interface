@@ -187,6 +187,29 @@ const isAddressResultExpanded = (date: string) => {
   return !!expandedAddressResults.value[date]
 }
 
+const copyAddress = async (address: string) => {
+  try {
+    await navigator.clipboard.writeText(address)
+    // Optionnel: afficher un message de confirmation
+    // Vous pouvez ajouter un toast notification ici si vous en avez un
+  } catch (err) {
+    console.error('Failed to copy address:', err)
+    // Fallback pour les navigateurs qui ne supportent pas clipboard API
+    const textArea = document.createElement('textarea')
+    textArea.value = address
+    textArea.style.position = 'fixed'
+    textArea.style.opacity = '0'
+    document.body.appendChild(textArea)
+    textArea.select()
+    try {
+      document.execCommand('copy')
+    } catch (fallbackErr) {
+      console.error('Fallback copy failed:', fallbackErr)
+    }
+    document.body.removeChild(textArea)
+  }
+}
+
 const formatAddress = (address: string) => {
   return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
 }
@@ -1076,33 +1099,54 @@ const poolPowerChartOptions = {
     </div>
 
     <!-- Top Holders -->
-    <div class="top-holders-grid">
-      <div class="top-card">
-        <h3>🏆 Top 10 Balances REG</h3>
-        <div class="top-list">
-          <div
-            v-for="(holder, index) in dataStore.topBalanceHolders"
-            :key="holder.address"
-            class="top-item"
-          >
-            <span class="rank">{{ index + 1 }}</span>
-            <span class="address">{{ formatAddress(holder.address) }}</span>
-            <span class="value">{{ formatNumber(holder.balance) }}</span>
+    <div class="top-holders-section">
+      <h2 class="top-holders-title">Listes des meilleurs adresses</h2>
+      <div class="top-holders-grid">
+        <div class="top-card">
+          <h3>🏆 Top 10 Balances REG</h3>
+          <div class="top-list">
+            <div
+              v-for="(holder, index) in dataStore.topBalanceHolders"
+              :key="holder.address"
+              class="top-item"
+            >
+              <span class="rank">{{ index + 1 }}</span>
+              <span class="address" @click="copyAddress(holder.address)" :title="holder.address">
+                {{ formatAddress(holder.address) }}
+              </span>
+              <span class="value">{{ formatNumber(holder.balance) }}</span>
+              <button
+                @click="copyAddress(holder.address)"
+                class="btn-copy-address"
+                :title="`Copier ${holder.address}`"
+              >
+                📋
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="top-card">
-        <h3>⚡ Top 10 Power Voting</h3>
-        <div class="top-list">
-          <div
-            v-for="(voter, index) in dataStore.topPowerVoters"
-            :key="voter.address"
-            class="top-item"
-          >
-            <span class="rank">{{ index + 1 }}</span>
-            <span class="address">{{ formatAddress(voter.address) }}</span>
-            <span class="value">{{ formatNumber(voter.power) }}</span>
+        <div class="top-card">
+          <h3>⚡ Top 10 Power Voting</h3>
+          <div class="top-list">
+            <div
+              v-for="(voter, index) in dataStore.topPowerVoters"
+              :key="voter.address"
+              class="top-item"
+            >
+              <span class="rank">{{ index + 1 }}</span>
+              <span class="address" @click="copyAddress(voter.address)" :title="voter.address">
+                {{ formatAddress(voter.address) }}
+              </span>
+              <span class="value">{{ formatNumber(voter.power) }}</span>
+              <button
+                @click="copyAddress(voter.address)"
+                class="btn-copy-address"
+                :title="`Copier ${voter.address}`"
+              >
+                📋
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1312,6 +1356,23 @@ const poolPowerChartOptions = {
   color: var(--text-muted);
 }
 
+.top-holders-section {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--border-color);
+}
+
+.top-holders-title {
+  font-size: 2rem;
+  margin-bottom: 2rem;
+  text-align: center;
+  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .top-holders-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -1325,6 +1386,12 @@ const poolPowerChartOptions = {
   border-radius: 1rem;
   padding: 2rem;
   box-shadow: var(--shadow-lg);
+  transition: all 0.3s ease;
+}
+
+.top-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
 }
 
 .top-card h3 {
@@ -1341,7 +1408,7 @@ const poolPowerChartOptions = {
 
 .top-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   gap: 1rem;
   align-items: center;
   padding: 1rem;
@@ -1372,6 +1439,39 @@ const poolPowerChartOptions = {
 .address {
   font-family: 'Courier New', monospace;
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.3s ease;
+  user-select: all;
+}
+
+.address:hover {
+  color: var(--primary-color);
+}
+
+.btn-copy-address {
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+}
+
+.btn-copy-address:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  transform: scale(1.1);
+}
+
+.btn-copy-address:active {
+  transform: scale(0.95);
+}
 }
 
 .value {
