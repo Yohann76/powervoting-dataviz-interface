@@ -36,6 +36,18 @@ const availableSnapshots = ref<SnapshotInfo[]>([])
 const selectedComparisonSnapshot = ref<string | null>(null)
 const isLoadingComparison = ref(false)
 
+// Address search functionality
+const searchAddress = ref<string>('0xc6a82e72156a11a2e1634633af5e4517b451f0d9')
+const addressSearchResults = ref<Array<{
+  date: string
+  dateFormatted: string
+  isCurrent: boolean
+  reg: number
+  powerVoting: number
+  found: boolean
+}>>([])
+const isSearchingAddress = ref(false)
+
 onMounted(async () => {
   if (dataStore.balances.length === 0 || dataStore.powerVoting.length === 0) {
     router.push('/')
@@ -44,6 +56,10 @@ onMounted(async () => {
 
   try {
     availableSnapshots.value = await loadSnapshotManifest()
+    // Lancer automatiquement la recherche avec l'adresse par défaut
+    if (searchAddress.value.trim()) {
+      await searchAddressAcrossSnapshots()
+    }
   } catch (err) {
     console.error('Failed to load snapshots:', err)
   }
@@ -105,6 +121,88 @@ const loadComparisonSnapshot = async () => {
 const clearComparison = () => {
   dataStore.clearComparisonSnapshot()
   selectedComparisonSnapshot.value = null
+}
+
+// Search address across all snapshots
+const searchAddressAcrossSnapshots = async () => {
+  if (!searchAddress.value.trim()) {
+    addressSearchResults.value = []
+    return
+  }
+
+  const addressToSearch = searchAddress.value.trim().toLowerCase()
+  isSearchingAddress.value = true
+  addressSearchResults.value = []
+
+  try {
+    // First, check current snapshot (uploaded)
+    const currentBalance = dataStore.balances.find(
+      (b) => (b.walletAddress || '').toLowerCase() === addressToSearch
+    )
+    const currentPower = dataStore.powerVoting.find(
+      (p) => (p.address || '').toLowerCase() === addressToSearch
+    )
+
+    addressSearchResults.value.push({
+      date: 'Actuel',
+      dateFormatted: 'Snapshot actuel (uploadé)',
+      isCurrent: true,
+      reg: currentBalance ? parseFloat(String(currentBalance.totalBalanceREG || currentBalance.totalBalance || 0)) : 0,
+      powerVoting: currentPower ? parseFloat(String(currentPower.powerVoting || 0)) : 0,
+      found: !!(currentBalance || currentPower),
+    })
+
+    // Then check all historical snapshots
+    for (const snapshot of availableSnapshots.value) {
+      try {
+        const { balances, powerVoting } = await loadSnapshot(snapshot)
+        
+        const balancesArray = balances.result?.balances || balances
+        const powerVotingArray = powerVoting.result?.powerVoting || powerVoting
+        
+        const balanceData = Array.isArray(balancesArray)
+          ? balancesArray.find((b: any) => (b.walletAddress || '').toLowerCase() === addressToSearch)
+          : null
+        
+        const powerData = Array.isArray(powerVotingArray)
+          ? powerVotingArray.find((p: any) => (p.address || '').toLowerCase() === addressToSearch)
+          : null
+
+        addressSearchResults.value.push({
+          date: snapshot.date,
+          dateFormatted: formatSnapshotDate(snapshot.date),
+          isCurrent: false,
+          reg: balanceData ? parseFloat(String(balanceData.totalBalanceREG || balanceData.totalBalance || 0)) : 0,
+          powerVoting: powerData ? parseFloat(String(powerData.powerVoting || 0)) : 0,
+          found: !!(balanceData || powerData),
+        })
+      } catch (err) {
+        console.error(`Failed to load snapshot ${snapshot.date}:`, err)
+        addressSearchResults.value.push({
+          date: snapshot.date,
+          dateFormatted: formatSnapshotDate(snapshot.date),
+          isCurrent: false,
+          reg: 0,
+          powerVoting: 0,
+          found: false,
+        })
+      }
+    }
+
+    // Sort by date (current first, then newest first)
+    addressSearchResults.value.sort((a, b) => {
+      if (a.isCurrent) return -1
+      if (b.isCurrent) return 1
+      // For historical snapshots, sort by date descending (newest first)
+      const dateA = a.date.split('-').reverse().join('-') // Convert DD-MM-YYYY to YYYY-MM-DD
+      const dateB = b.date.split('-').reverse().join('-')
+      return dateB.localeCompare(dateA)
+    })
+  } catch (err) {
+    console.error('Failed to search address:', err)
+  } finally {
+    isSearchingAddress.value = false
+  }
 }
 
 // Chart data
@@ -760,6 +858,70 @@ const poolPowerChartOptions = {
       </div>
     </div>
 
+    <!-- Address Search Across Snapshots -->
+    <div class="section-header">
+      <h2>🔍 Recherche d'adresse sur tous les snapshots</h2>
+      <p>Analysez l'évolution d'une adresse sur tous les snapshots historiques</p>
+    </div>
+
+    <div class="address-search-section">
+      <div class="search-controls">
+        <div class="search-input-group">
+          <input
+            v-model="searchAddress"
+            @keyup.enter="searchAddressAcrossSnapshots"
+            type="text"
+            placeholder="Entrez une adresse (0x...)"
+            class="search-input"
+          />
+          <button
+            @click="searchAddressAcrossSnapshots"
+            :disabled="isSearchingAddress || !searchAddress.trim()"
+            class="btn btn-primary search-btn"
+          >
+            {{ isSearchingAddress ? 'Recherche...' : 'Rechercher' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="addressSearchResults.length > 0" class="address-results-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Snapshot</th>
+              <th>Date</th>
+              <th>REG</th>
+              <th>Power Voting</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="result in addressSearchResults"
+              :key="result.date"
+              :class="{ 'current-snapshot': result.isCurrent, 'not-found': !result.found }"
+            >
+              <td>
+                <span v-if="result.isCurrent" class="current-badge">Actuel</span>
+                <span v-else>{{ result.date }}</span>
+              </td>
+              <td>{{ result.dateFormatted }}</td>
+              <td class="number-cell">{{ result.found ? formatNumber(result.reg) : '–' }}</td>
+              <td class="number-cell">{{ result.found ? formatNumber(result.powerVoting) : '–' }}</td>
+              <td>
+                <span v-if="result.found" class="status-found">✓ Trouvé</span>
+                <span v-else class="status-not-found">✗ Non trouvé</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="addressSearchResults.length === 0 && !isSearchingAddress && searchAddress.trim()" class="no-results">
+        <p>Aucun résultat trouvé pour cette adresse.</p>
+      </div>
+    </div>
+
     <!-- Top Holders -->
     <div class="top-holders-grid">
       <div class="top-card">
@@ -1284,17 +1446,37 @@ const poolPowerChartOptions = {
   flex: 1;
   min-width: 250px;
   padding: 0.75rem 1rem;
-  background: var(--glass-bg);
+  background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   color: var(--text-primary);
   font-size: 0.95rem;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  font-weight: 500;
+}
+
+.comparison-select option {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  padding: 0.5rem;
+}
+
+.comparison-select:hover {
+  border-color: var(--primary-color);
 }
 
 .comparison-select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.comparison-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .btn-clear-comparison {
@@ -1398,6 +1580,134 @@ const poolPowerChartOptions = {
   font-style: italic;
 }
 
+/* Address Search Section */
+.address-search-section {
+  margin: 2rem 0;
+  padding: 2rem;
+  background: var(--card-bg);
+  border-radius: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.search-controls {
+  margin-bottom: 2rem;
+}
+
+.search-input-group {
+  display: flex;
+  gap: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.search-input {
+  flex: 1;
+  padding: 0.875rem 1.25rem;
+  font-size: 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.search-btn {
+  padding: 0.875rem 2rem;
+  white-space: nowrap;
+}
+
+.search-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.address-results-table {
+  overflow-x: auto;
+  margin-top: 2rem;
+}
+
+.address-results-table table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--glass-bg);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.address-results-table thead {
+  background: var(--card-bg);
+}
+
+.address-results-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  text-transform: uppercase;
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+}
+
+.address-results-table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.address-results-table tbody tr:hover {
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.address-results-table tbody tr.current-snapshot {
+  background: rgba(99, 102, 241, 0.1);
+  font-weight: 600;
+}
+
+.address-results-table tbody tr.not-found {
+  opacity: 0.6;
+}
+
+.current-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.number-cell {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  text-align: right;
+}
+
+.status-found {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.status-not-found {
+  color: var(--text-muted);
+}
+
+.no-results {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 768px) {
   .comparison-controls {
     flex-direction: column;
@@ -1410,6 +1720,23 @@ const poolPowerChartOptions = {
 
   .comparison-grid {
     grid-template-columns: 1fr;
+  }
+
+  .search-input-group {
+    flex-direction: column;
+  }
+
+  .search-btn {
+    width: 100%;
+  }
+
+  .address-results-table {
+    font-size: 0.875rem;
+  }
+
+  .address-results-table th,
+  .address-results-table td {
+    padding: 0.75rem 0.5rem;
   }
 }
 </style>
