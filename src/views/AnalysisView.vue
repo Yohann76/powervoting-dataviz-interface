@@ -32,6 +32,7 @@ ChartJS.register(
 const router = useRouter()
 const dataStore = useDataStore()
 const expandedWallets = ref<Record<string, boolean>>({})
+const expandedAddressResults = ref<Record<string, boolean>>({})
 const availableSnapshots = ref<SnapshotInfo[]>([])
 const selectedComparisonSnapshot = ref<string | null>(null)
 const isLoadingComparison = ref(false)
@@ -45,8 +46,102 @@ const addressSearchResults = ref<Array<{
   reg: number
   powerVoting: number
   found: boolean
+  poolAnalysis?: {
+    totalPools: number
+    regInPools: number
+    poolsInRange: number
+    poolsOutOfRange: number
+    regInRange: number
+    regOutOfRange: number
+    poolRegPercentage: number
+    v2Pools: number
+    v3Pools: number
+    dexCount: number
+  }
 }>>([])
 const isSearchingAddress = ref(false)
+
+// Helper function to analyze pool positions for a wallet
+const analyzePoolPositions = (walletData: any) => {
+  if (!walletData || !walletData.sourceBalance) {
+    return null
+  }
+
+  const networks = walletData.sourceBalance
+  const positions: Array<{
+    equivalentREG: number
+    isV3: boolean
+    isActive?: boolean
+  }> = []
+
+  let totalRegInPools = 0
+  let poolsInRange = 0
+  let poolsOutOfRange = 0
+  let regInRange = 0
+  let regOutOfRange = 0
+  let v2Pools = 0
+  let v3Pools = 0
+  const dexSet = new Set<string>()
+
+  Object.entries(networks).forEach(([networkName, networkValue]: [string, any]) => {
+    const dexs = networkValue?.dexs
+    if (!dexs) return
+
+    Object.entries(dexs).forEach(([dexName, rawPositions]: [string, any]) => {
+      if (!Array.isArray(rawPositions)) return
+
+      dexSet.add(`${networkName}-${dexName}`)
+
+      rawPositions.forEach((pos: any) => {
+        const regAmount = parseFloat(String(pos.equivalentREG || '0'))
+        if (regAmount <= 0) return
+
+        const isV3 = pos.tickLower !== undefined && pos.tickUpper !== undefined
+        const isActive = pos.isActive !== undefined ? pos.isActive : (isV3 ? false : true)
+
+        totalRegInPools += regAmount
+
+        if (isV3) {
+          v3Pools++
+          if (isActive) {
+            poolsInRange++
+            regInRange += regAmount
+          } else {
+            poolsOutOfRange++
+            regOutOfRange += regAmount
+          }
+        } else {
+          v2Pools++
+          // V2 pools are considered "in range" by default (always active)
+          poolsInRange++
+          regInRange += regAmount
+        }
+
+        positions.push({
+          equivalentREG: regAmount,
+          isV3,
+          isActive,
+        })
+      })
+    })
+  })
+
+  const totalReg = parseFloat(String(walletData.totalBalanceREG || walletData.totalBalance || 0))
+  const poolRegPercentage = totalReg > 0 ? (totalRegInPools / totalReg) * 100 : 0
+
+  return {
+    totalPools: positions.length,
+    regInPools: totalRegInPools,
+    poolsInRange,
+    poolsOutOfRange,
+    regInRange,
+    regOutOfRange,
+    poolRegPercentage,
+    v2Pools,
+    v3Pools,
+    dexCount: dexSet.size,
+  }
+}
 
 onMounted(async () => {
   if (dataStore.balances.length === 0 || dataStore.powerVoting.length === 0) {
@@ -82,6 +177,14 @@ const isWalletExpanded = (address: string) => {
 
 const toggleWalletPositions = (address: string) => {
   expandedWallets.value[address] = !isWalletExpanded(address)
+}
+
+const toggleAddressResultDetails = (date: string) => {
+  expandedAddressResults.value[date] = !expandedAddressResults.value[date]
+}
+
+const isAddressResultExpanded = (date: string) => {
+  return !!expandedAddressResults.value[date]
 }
 
 const formatAddress = (address: string) => {
@@ -143,6 +246,8 @@ const searchAddressAcrossSnapshots = async () => {
       (p) => (p.address || '').toLowerCase() === addressToSearch
     )
 
+    const currentPoolAnalysis = currentBalance ? analyzePoolPositions(currentBalance) : null
+
     addressSearchResults.value.push({
       date: 'Actuel',
       dateFormatted: 'Snapshot actuel (uploadé)',
@@ -150,6 +255,7 @@ const searchAddressAcrossSnapshots = async () => {
       reg: currentBalance ? parseFloat(String(currentBalance.totalBalanceREG || currentBalance.totalBalance || 0)) : 0,
       powerVoting: currentPower ? parseFloat(String(currentPower.powerVoting || 0)) : 0,
       found: !!(currentBalance || currentPower),
+      poolAnalysis: currentPoolAnalysis || undefined,
     })
 
     // Then check all historical snapshots
@@ -168,6 +274,8 @@ const searchAddressAcrossSnapshots = async () => {
           ? powerVotingArray.find((p: any) => (p.address || '').toLowerCase() === addressToSearch)
           : null
 
+        const poolAnalysis = balanceData ? analyzePoolPositions(balanceData) : null
+
         addressSearchResults.value.push({
           date: snapshot.date,
           dateFormatted: formatSnapshotDate(snapshot.date),
@@ -175,6 +283,7 @@ const searchAddressAcrossSnapshots = async () => {
           reg: balanceData ? parseFloat(String(balanceData.totalBalanceREG || balanceData.totalBalance || 0)) : 0,
           powerVoting: powerData ? parseFloat(String(powerData.powerVoting || 0)) : 0,
           found: !!(balanceData || powerData),
+          poolAnalysis: poolAnalysis || undefined,
         })
       } catch (err) {
         console.error(`Failed to load snapshot ${snapshot.date}:`, err)
@@ -884,37 +993,81 @@ const poolPowerChartOptions = {
         </div>
       </div>
 
-      <div v-if="addressSearchResults.length > 0" class="address-results-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Snapshot</th>
-              <th>Date</th>
-              <th>REG</th>
-              <th>Power Voting</th>
-              <th>Statut</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="result in addressSearchResults"
-              :key="result.date"
-              :class="{ 'current-snapshot': result.isCurrent, 'not-found': !result.found }"
-            >
-              <td>
-                <span v-if="result.isCurrent" class="current-badge">Actuel</span>
-                <span v-else>{{ result.date }}</span>
-              </td>
-              <td>{{ result.dateFormatted }}</td>
-              <td class="number-cell">{{ result.found ? formatNumber(result.reg) : '–' }}</td>
-              <td class="number-cell">{{ result.found ? formatNumber(result.powerVoting) : '–' }}</td>
-              <td>
-                <span v-if="result.found" class="status-found">✓ Trouvé</span>
-                <span v-else class="status-not-found">✗ Non trouvé</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="addressSearchResults.length > 0" class="address-results-container">
+        <div
+          v-for="result in addressSearchResults"
+          :key="result.date"
+          class="address-result-card"
+          :class="{ 'current-snapshot': result.isCurrent, 'not-found': !result.found }"
+        >
+          <!-- Ligne principale -->
+          <div class="result-main-row">
+            <div class="result-col-snapshot">
+              <span v-if="result.isCurrent" class="current-badge">Actuel</span>
+              <span v-else class="snapshot-date">{{ result.date }}</span>
+              <span class="snapshot-date-formatted">{{ result.dateFormatted }}</span>
+            </div>
+
+            <div class="result-col-reg">
+              <span class="result-label">REG Total</span>
+              <span class="result-value">{{ result.found ? formatNumber(result.reg) : '–' }}</span>
+            </div>
+
+            <div class="result-col-power">
+              <span class="result-label">Power Voting</span>
+              <span class="result-value">{{ result.found ? formatNumber(result.powerVoting) : '–' }}</span>
+            </div>
+
+            <div class="result-col-pools" v-if="result.poolAnalysis">
+              <span class="result-label">Nb Pools</span>
+              <span class="result-value">{{ formatInteger(result.poolAnalysis.totalPools) }}</span>
+            </div>
+
+            <div class="result-col-percentage" v-if="result.poolAnalysis">
+              <span class="result-label">% REG en Pools</span>
+              <span class="result-value">{{ formatNumber(result.poolAnalysis.poolRegPercentage) }}%</span>
+            </div>
+
+            <div class="result-col-status">
+              <span v-if="result.found" class="status-found">✓</span>
+              <span v-else class="status-not-found">✗</span>
+              <button
+                v-if="result.found && result.poolAnalysis"
+                @click="toggleAddressResultDetails(result.date)"
+                class="btn-expand-details"
+              >
+                {{ isAddressResultExpanded(result.date) ? '▼' : '▶' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Ligne détaillée (expandable) -->
+          <div
+            v-if="isAddressResultExpanded(result.date) && result.poolAnalysis"
+            class="result-details-row"
+          >
+            <div class="detail-item-compact">
+              <span class="detail-label-compact">REG en Pools</span>
+              <span class="detail-value-compact">{{ formatNumber(result.poolAnalysis.regInPools) }}</span>
+            </div>
+            <div class="detail-item-compact">
+              <span class="detail-label-compact">In Range</span>
+              <span class="detail-value-compact">{{ formatInteger(result.poolAnalysis.poolsInRange) }} pools / {{ formatNumber(result.poolAnalysis.regInRange) }} REG</span>
+            </div>
+            <div class="detail-item-compact">
+              <span class="detail-label-compact">Out Range</span>
+              <span class="detail-value-compact">{{ formatInteger(result.poolAnalysis.poolsOutOfRange) }} pools / {{ formatNumber(result.poolAnalysis.regOutOfRange) }} REG</span>
+            </div>
+            <div class="detail-item-compact">
+              <span class="detail-label-compact">V2 / V3</span>
+              <span class="detail-value-compact">{{ formatInteger(result.poolAnalysis.v2Pools) }} / {{ formatInteger(result.poolAnalysis.v3Pools) }}</span>
+            </div>
+            <div class="detail-item-compact">
+              <span class="detail-label-compact">DEX</span>
+              <span class="detail-value-compact">{{ formatInteger(result.poolAnalysis.dexCount) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div v-if="addressSearchResults.length === 0 && !isSearchingAddress && searchAddress.trim()" class="no-results">
@@ -1628,51 +1781,148 @@ const poolPowerChartOptions = {
   cursor: not-allowed;
 }
 
-.address-results-table {
-  overflow-x: auto;
+.address-results-container {
   margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.address-results-table table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--glass-bg);
-  border-radius: 0.5rem;
-  overflow: hidden;
-}
-
-.address-results-table thead {
+.address-result-card {
   background: var(--card-bg);
-}
-
-.address-results-table th {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
   padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  color: var(--text-primary);
-  border-bottom: 2px solid var(--border-color);
-  text-transform: uppercase;
-  font-size: 0.875rem;
-  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
 }
 
-.address-results-table td {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-primary);
+.address-result-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.1);
 }
 
-.address-results-table tbody tr:hover {
+.address-result-card.current-snapshot {
+  border-color: var(--primary-color);
   background: rgba(99, 102, 241, 0.05);
 }
 
-.address-results-table tbody tr.current-snapshot {
-  background: rgba(99, 102, 241, 0.1);
-  font-weight: 600;
+.address-result-card.not-found {
+  opacity: 0.6;
 }
 
-.address-results-table tbody tr.not-found {
-  opacity: 0.6;
+.result-main-row {
+  display: grid;
+  grid-template-columns: 150px repeat(4, 1fr) auto;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.result-col-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.snapshot-date {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.snapshot-date-formatted {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.result-col-reg,
+.result-col-power,
+.result-col-pools,
+.result-col-percentage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.result-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.result-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.result-col-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.btn-expand-details {
+  padding: 0.375rem 0.75rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  color: var(--primary-color);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 32px;
+  text-align: center;
+}
+
+.btn-expand-details:hover {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.result-details-row {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.5rem;
+  align-items: center;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 100px;
+  }
+}
+
+.detail-item-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-label-compact {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-value-compact {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
 }
 
 .current-badge {
@@ -1730,13 +1980,20 @@ const poolPowerChartOptions = {
     width: 100%;
   }
 
-  .address-results-table {
+  .result-main-row {
+    grid-template-columns: 120px repeat(2, 1fr) auto;
+    gap: 1rem;
     font-size: 0.875rem;
   }
 
-  .address-results-table th,
-  .address-results-table td {
-    padding: 0.75rem 0.5rem;
+  .result-col-pools,
+  .result-col-percentage {
+    display: none;
+  }
+
+  .result-details-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
   }
 }
 </style>
