@@ -1472,7 +1472,6 @@ const poolPowerChartOptions = {
 .btn-copy-address:active {
   transform: scale(0.95);
 }
-}
 
 .value {
   font-weight: 700;
