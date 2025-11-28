@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import GenerationView from '../views/GenerationView.vue'
 import UploadView from '../views/UploadView.vue'
 import AnalysisView from '../views/AnalysisView.vue'
 
@@ -7,6 +8,15 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      redirect: '/generate',
+    },
+    {
+      path: '/generate',
+      name: 'generate',
+      component: GenerationView,
+    },
+    {
+      path: '/upload',
       name: 'upload',
       component: UploadView,
     },

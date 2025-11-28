@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useDataStore } from '@/stores/dataStore'
 import { loadSnapshotManifest, loadSnapshot, type SnapshotInfo } from '@/utils/snapshotLoader'
 import Papa from 'papaparse'
 
 const router = useRouter()
+const route = useRoute()
 const dataStore = useDataStore()
 
 const balancesFile = ref<File | null>(null)
@@ -50,8 +51,12 @@ const parseFile = async (file: File): Promise<any> => {
 }
 
 const handleUpload = async () => {
-  if (!balancesFile.value || !powerVotingFile.value) {
-    error.value = 'Veuillez sélectionner les deux fichiers'
+  // Vérifier si les fichiers sont déjà chargés depuis la génération
+  const hasBalances = balancesFile.value || dataStore.balances.length > 0
+  const hasPowerVoting = powerVotingFile.value || dataStore.powerVoting.length > 0
+
+  if (!hasBalances || !hasPowerVoting) {
+    error.value = 'Veuillez sélectionner les deux fichiers ou utiliser les fichiers générés'
     return
   }
 
@@ -59,15 +64,24 @@ const handleUpload = async () => {
   error.value = ''
 
   try {
-    const [balancesData, powerVotingData] = await Promise.all([
-      parseFile(balancesFile.value),
-      parseFile(powerVotingFile.value),
-    ])
+    // Si les fichiers sont déjà dans le store, les utiliser directement
+    if (dataStore.balances.length > 0 && dataStore.powerVoting.length > 0) {
+      // Les données sont déjà chargées, aller directement à l'analyse
+      router.push('/analysis')
+    } else {
+      // Sinon, parser les fichiers uploadés
+      const balancesData = balancesFile.value 
+        ? await parseFile(balancesFile.value)
+        : dataStore.balances
+      const powerVotingData = powerVotingFile.value
+        ? await parseFile(powerVotingFile.value)
+        : dataStore.powerVoting
 
-    dataStore.setBalancesData(balancesData)
-    dataStore.setPowerVotingData(powerVotingData)
+      dataStore.setBalancesData(balancesData)
+      dataStore.setPowerVotingData(powerVotingData)
 
-    router.push('/analysis')
+      router.push('/analysis')
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Erreur lors du chargement des fichiers'
   } finally {
@@ -107,6 +121,13 @@ onMounted(async () => {
     console.error('Failed to load snapshots:', err)
   } finally {
     isLoadingSnapshots.value = false
+  }
+
+  // Si on vient de la génération (via query param), les fichiers sont déjà chargés dans le store
+  // Sinon, on nettoie le store pour avoir une page upload propre
+  if (route.query.fromGeneration !== 'true') {
+    // Si on accède à /upload directement via le menu, on ne charge pas les fichiers générés
+    // On laisse l'utilisateur uploader manuellement
   }
 })
 
@@ -219,10 +240,23 @@ const formatDiff = (diff: number, isInteger = false) => {
 
       <div v-if="error" class="error-message">⚠️ {{ error }}</div>
 
+      <!-- Message si fichiers chargés depuis génération -->
+      <div v-if="route.query.fromGeneration === 'true' && (dataStore.balances.length > 0 || dataStore.powerVoting.length > 0)" class="info-message">
+        <p>
+          ✅ Fichiers chargés depuis la génération.
+          <span v-if="dataStore.balances.length > 0 && dataStore.powerVoting.length > 0">
+            Vous pouvez maintenant analyser les données.
+          </span>
+          <span v-else>
+            Veuillez charger {{ dataStore.balances.length > 0 ? 'le fichier Power Voting' : 'le fichier Balances' }} pour continuer.
+          </span>
+        </p>
+      </div>
+
       <div class="button-group">
         <button
           @click="handleUpload"
-          :disabled="!balancesFile || !powerVotingFile || isLoading"
+          :disabled="(!balancesFile && dataStore.balances.length === 0) || (!powerVotingFile && dataStore.powerVoting.length === 0) || isLoading"
           class="btn btn-primary"
         >
           <span v-if="!isLoading">🚀 Analyser les données</span>
@@ -716,6 +750,16 @@ const formatDiff = (diff: number, isInteger = false) => {
   white-space: nowrap;
 }
 
+.info-message {
+  margin: 1.5rem 0;
+  padding: 1rem 1.5rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid #22c55e;
+  border-radius: 0.75rem;
+  color: #22c55e;
+  text-align: center;
+}
+
 @media (max-width: 768px) {
   .upload-card {
     padding: 1.5rem;
@@ -746,5 +790,6 @@ const formatDiff = (diff: number, isInteger = false) => {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
+
 }
 </style>

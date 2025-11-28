@@ -12,7 +12,8 @@ import { RouterLink, RouterView } from 'vue-router'
             <span class="subtitle">Data Visualization & Analysis</span>
           </h1>
           <nav class="main-nav">
-            <RouterLink to="/">Upload</RouterLink>
+            <RouterLink to="/generate">Génération</RouterLink>
+            <RouterLink to="/upload">Upload</RouterLink>
             <RouterLink to="/analysis">Analysis</RouterLink>
           </nav>
         </div>

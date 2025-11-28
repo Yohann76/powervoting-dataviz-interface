@@ -1,10 +1,23 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        BALANCE_CALCULATOR_REPO: ${BALANCE_CALCULATOR_REPO:-https://github.com/Yohann76/balance-calculator.git}
+        BALANCE_CALCULATOR_BRANCH: ${BALANCE_CALCULATOR_BRANCH:-yohann-test-pool-v3-modeles}
     ports:
       - "5173:5173"
+      - "3001:3001"
     volumes:
       - .:/app
       - /app/node_modules
+      - /app/balance-calculator/node_modules
+      - /app/balance-calculator
     environment:
       - CHOKIDAR_USEPOLLING=true
+      - THEGRAPH_API_KEY=${THEGRAPH_API_KEY:-}
+      - API_KEY_ETHERSCAN=${API_KEY_ETHERSCAN:-}
+      - API_KEY_GNOSISSCAN=${API_KEY_GNOSISSCAN:-}
+      - API_KEY_POLYGONSCAN=${API_KEY_POLYGONSCAN:-}
+      - API_KEY_MORALIS=${API_KEY_MORALIS:-}
+      - PORT=3001
