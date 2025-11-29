@@ -216,6 +216,35 @@ const estimatePositionMultiplier = (position: any) => {
   return 1.0 // Par défaut
 }
 
+// Arrondir le ratio réel à la valeur théorique "ronde" la plus proche
+// Valeurs théoriques : 0.1, 1.0, 1.3, 1.4, 1.5, 2.5
+const roundToTheoreticalMultiplier = (realMultiplier: number): number => {
+  const theoreticalValues = [0.1, 1.0, 1.3, 1.4, 1.5, 2.5]
+  const maxTolerance = 0.5 // Tolérance maximale pour forcer l'utilisation d'une valeur théorique
+  
+  // Trouver la valeur théorique la plus proche
+  let closestValue = theoreticalValues[0]
+  let minDistance = Math.abs(realMultiplier - closestValue)
+  
+  for (const theoretical of theoreticalValues) {
+    const distance = Math.abs(realMultiplier - theoretical)
+    if (distance < minDistance) {
+      minDistance = distance
+      closestValue = theoretical
+    }
+  }
+  
+  // Si la distance est raisonnable (dans la tolérance maximale), utiliser la valeur théorique
+  // Cela permet d'afficher des valeurs "rondes" même si le ratio réel est légèrement différent
+  if (minDistance <= maxTolerance) {
+    return closestValue
+  }
+  
+  // Si le ratio réel est très différent de toutes les valeurs théoriques,
+  // arrondir à 2 décimales pour afficher la valeur réelle
+  return Math.round(realMultiplier * 100) / 100
+}
+
 // Calculer le multiplicateur global de chaque pool en agrégeant toutes les données
 const globalPoolMultipliers = computed(() => {
   const poolsMap = new Map<string, { totalREG: number, totalPower: number }>()
@@ -350,9 +379,30 @@ const getPositionPowerAndMultiplier = (position: any, profile: any) => {
   const positionRatio = position.regAmount / positionPool.totalREG
   const positionPower = poolTotalPower * positionRatio
   
-  // Toujours utiliser le multiplicateur théorique "ronde" pour l'affichage
-  // (1.3, 1.4, 1.5, 2.5, 0.1, 1.0) indépendamment du multiplicateur réel calculé
-  const poolMultiplier = estimatePositionMultiplier(position)
+  // Calculer le multiplicateur réel à partir du pouvoir réel
+  // Le ratio positionPower / position.regAmount représente le ratio entre
+  // le pouvoir de vote distribué et la liquidité boostée (equivalentREG)
+  let poolMultiplier: number
+  
+  // Pour les positions V3 inactives, le multiplicateur devrait être 1.0
+  // (selon inactiveBoost = 1 dans optionsModifiers.ts)
+  if (position.poolType === 'v3' && position.isActive === false) {
+    // Position V3 inactive : multiplicateur = 1.0
+    poolMultiplier = 1.0
+  } else if (position.regAmount > 0 && positionPower > 0) {
+    const realMultiplier = positionPower / position.regAmount
+    
+    // Arrondir le ratio réel à la valeur théorique "ronde" la plus proche
+    // Cela permet d'afficher des valeurs cohérentes (1.0, 1.3, 1.4, 1.5, 2.5, 0.1)
+    // tout en respectant le ratio réel calculé
+    poolMultiplier = roundToTheoreticalMultiplier(realMultiplier)
+  } else if (position.regAmount > 0) {
+    // Si pas de pouvoir mais de la liquidité, le multiplicateur est 0
+    poolMultiplier = 0
+  } else {
+    // Si pas de liquidité, utiliser l'estimation théorique comme fallback
+    poolMultiplier = estimatePositionMultiplier(position)
+  }
   
   return {
     power: positionPower,
@@ -1269,8 +1319,7 @@ const poolPowerChartOptions = {
         <li><strong>Honeyswap V2</strong> : ×1.3</li>
         <li><strong>Balancer V2</strong> : ×1.4</li>
         <li><strong>Sushiswap V3 actif</strong> : ×2.5</li>
-        <li><strong>Sushiswap V3 inactif</strong> : ×0.1</li>
-        <li><strong>Par défaut</strong> : ×1.0</li>
+        <li><strong>Sushiswap V3 inactif</strong> : ×1</li>
       </ul>
     </div>
 
