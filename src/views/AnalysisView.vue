@@ -431,6 +431,181 @@ const isAddressResultExpanded = (date: string) => {
   return !!expandedAddressResults.value[date]
 }
 
+// Données pour le graphique d'évolution de l'adresse
+const addressEvolutionChartData = computed(() => {
+  // Récupérer les couleurs CSS du thème
+  const root = document.documentElement
+  const getCSSVar = (varName: string, fallback: string) => {
+    return getComputedStyle(root).getPropertyValue(varName).trim() || fallback
+  }
+  
+  const primaryColor = getCSSVar('--primary-color', '#4a90e2')
+  const secondaryColor = getCSSVar('--secondary-color', '#22c55e')
+  
+  // Convertir hex en rgba pour les backgrounds
+  const hexToRgba = (hex: string, alpha: number) => {
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  
+  const results = addressSearchResults.value.filter(r => r.found).sort((a, b) => {
+    // Le snapshot actuel (uploadé) est toujours le plus récent (à droite)
+    if (a.isCurrent && !b.isCurrent) return 1
+    if (!a.isCurrent && b.isCurrent) return -1
+    // Pour les snapshots historiques, trier par date croissante (ancien à gauche, récent à droite)
+    // Mais ignorer le snapshot actuel qui a date='Actuel'
+    if (a.date === 'Actuel' || b.date === 'Actuel') return 0
+    
+    // Parser les dates au format DD-MM-YYYY correctement
+    const parseDate = (dateStr: string) => {
+      const [day, month, year] = dateStr.split('-')
+      return new Date(`${year}-${month}-${day}`).getTime()
+    }
+    
+    const dateA = parseDate(a.date)
+    const dateB = parseDate(b.date)
+    
+    // Vérifier que les dates sont valides
+    if (isNaN(dateA) || isNaN(dateB)) {
+      // Si une date est invalide, comparer les strings
+      return a.date.localeCompare(b.date)
+    }
+    
+    // Tri croissant : ancien à gauche, récent à droite
+    return dateA - dateB
+  })
+
+  if (results.length === 0) {
+    return {
+      labels: [],
+      datasets: []
+    }
+  }
+
+  return {
+    labels: results.map(r => r.dateFormatted || r.date),
+    datasets: [
+      {
+        label: 'Power Voting',
+        data: results.map(r => r.powerVoting),
+        borderColor: primaryColor,
+        backgroundColor: hexToRgba(primaryColor, 0.1),
+        yAxisID: 'y',
+        tension: 0.4,
+        fill: false
+      },
+      {
+        label: 'REG en Wallet',
+        data: results.map(r => {
+          const regInPools = r.poolAnalysis?.regInPools || 0
+          return Math.max(0, r.reg - regInPools)
+        }),
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        yAxisID: 'y',
+        tension: 0.4,
+        fill: false
+      },
+      {
+        label: 'REG en Pools',
+        data: results.map(r => r.poolAnalysis?.regInPools || 0),
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+        yAxisID: 'y',
+        tension: 0.4,
+        fill: false
+      }
+    ]
+  }
+})
+
+// Options pour le graphique d'évolution de l'adresse
+const addressEvolutionChartOptions = computed(() => {
+  // Récupérer les couleurs CSS du thème
+  const root = document.documentElement
+  const getCSSVar = (varName: string, fallback: string) => {
+    return getComputedStyle(root).getPropertyValue(varName).trim() || fallback
+  }
+  
+  const textPrimary = getCSSVar('--text-primary', '#ffffff')
+  const textSecondary = getCSSVar('--text-secondary', '#a0a0a0')
+  const borderColor = getCSSVar('--border-color', '#e5e7eb')
+  
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+        labels: {
+          color: textPrimary,
+          usePointStyle: true,
+          padding: 15
+        }
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        titleColor: '#fff',
+        bodyColor: '#fff',
+        borderColor: borderColor,
+        borderWidth: 1,
+        callbacks: {
+          label: function(context: any) {
+            let label = context.dataset.label || ''
+            if (label) {
+              label += ': '
+            }
+            label += formatNumber(context.parsed.y)
+            return label
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        reverse: false,
+        ticks: {
+          color: textSecondary,
+          maxRotation: 45,
+          minRotation: 45
+        },
+        grid: {
+          color: borderColor
+        }
+      },
+      y: {
+        type: 'linear' as const,
+        display: true,
+        position: 'left' as const,
+        ticks: {
+          color: textSecondary,
+          callback: function(value: any) {
+            return formatNumber(value)
+          }
+        },
+        grid: {
+          color: borderColor
+        },
+        title: {
+          display: true,
+          text: 'Power Voting / REG Total',
+          color: textPrimary
+        }
+      }
+    },
+    interaction: {
+      mode: 'nearest' as const,
+      axis: 'x' as const,
+      intersect: false
+    }
+  }
+})
+
 const copyAddress = async (address: string) => {
   try {
     await navigator.clipboard.writeText(address)
@@ -1193,87 +1368,9 @@ const poolPowerChartOptions = {
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Snapshot Comparison -->
-    <div class="section-header">
-      <h2>📊 Comparaison avec snapshot historique</h2>
-      <p>Comparez les métriques actuelles avec un snapshot précédent</p>
-    </div>
-
-    <div class="comparison-section" v-if="availableSnapshots.length > 0">
-      <div class="comparison-controls">
-        <select
-          v-model="selectedComparisonSnapshot"
-          @change="loadComparisonSnapshot"
-          :disabled="isLoadingComparison"
-          class="comparison-select"
-        >
-          <option value="">-- Sélectionner un snapshot --</option>
-          <option
-            v-for="snapshot in availableSnapshots"
-            :key="snapshot.date"
-            :value="snapshot.date"
-          >
-            {{ formatSnapshotDate(snapshot.date) }}
-          </option>
-        </select>
-        <button
-          v-if="dataStore.snapshotComparison"
-          @click="clearComparison"
-          class="btn-clear-comparison"
-        >
-          ✕ Effacer la comparaison
-        </button>
-      </div>
-
-      <div v-if="dataStore.snapshotComparison" class="comparison-results">
-        <div class="comparison-card">
-          <h3>📈 Différences</h3>
-          <div class="comparison-grid">
-            <div class="comparison-item">
-              <div class="comparison-label">Nombre de holders</div>
-              <div class="comparison-values">
-                <span class="comparison-current">{{ formatInteger(dataStore.snapshotComparison.current.holders) }}</span>
-                <span class="comparison-arrow">→</span>
-                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.holders >= 0 ? 'positive' : 'negative'">
-                  {{ dataStore.snapshotComparison.diff.holders >= 0 ? '+' : '' }}{{ formatInteger(dataStore.snapshotComparison.diff.holders) }}
-                </span>
-              </div>
-              <div class="comparison-reference">
-                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatInteger(dataStore.snapshotComparison.comparison.holders) }}
-              </div>
-            </div>
-
-            <div class="comparison-item">
-              <div class="comparison-label">Wallets en pools</div>
-              <div class="comparison-values">
-                <span class="comparison-current">{{ formatInteger(dataStore.snapshotComparison.current.poolWallets) }}</span>
-                <span class="comparison-arrow">→</span>
-                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.poolWallets >= 0 ? 'positive' : 'negative'">
-                  {{ dataStore.snapshotComparison.diff.poolWallets >= 0 ? '+' : '' }}{{ formatInteger(dataStore.snapshotComparison.diff.poolWallets) }}
-                </span>
-              </div>
-              <div class="comparison-reference">
-                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatInteger(dataStore.snapshotComparison.comparison.poolWallets) }}
-              </div>
-            </div>
-
-            <div class="comparison-item">
-              <div class="comparison-label">Power Voting total</div>
-              <div class="comparison-values">
-                <span class="comparison-current">{{ formatNumber(dataStore.snapshotComparison.current.totalPower) }}</span>
-                <span class="comparison-arrow">→</span>
-                <span class="comparison-diff" :class="dataStore.snapshotComparison.diff.totalPower >= 0 ? 'positive' : 'negative'">
-                  {{ dataStore.snapshotComparison.diff.totalPower >= 0 ? '+' : '' }}{{ formatNumber(dataStore.snapshotComparison.diff.totalPower) }}
-                </span>
-              </div>
-              <div class="comparison-reference">
-                Snapshot du {{ formatSnapshotDate(dataStore.snapshotComparison.date) }}: {{ formatNumber(dataStore.snapshotComparison.comparison.totalPower) }}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div v-if="addressSearchResults.length === 0 && !isSearchingAddress && searchAddress.trim()" class="no-results">
+        <p>Aucun résultat trouvé pour cette adresse.</p>
       </div>
     </div>
 
@@ -1380,8 +1477,14 @@ const poolPowerChartOptions = {
         </div>
       </div>
 
-      <div v-if="addressSearchResults.length === 0 && !isSearchingAddress && searchAddress.trim()" class="no-results">
-        <p>Aucun résultat trouvé pour cette adresse.</p>
+      <!-- Graphique d'évolution -->
+      <div v-if="addressSearchResults.length > 0 && addressSearchResults.some(r => r.found)" class="address-evolution-chart">
+        <h3 style="margin-bottom: 1.5rem; color: var(--text-primary); font-weight: 600;">📈 Évolution de l'adresse {{ formatAddress(searchAddress) }}</h3>
+        <Line
+          :data="addressEvolutionChartData"
+          :options="addressEvolutionChartOptions"
+          style="max-height: 400px;"
+        />
       </div>
     </div>
 
@@ -2218,6 +2321,15 @@ const poolPowerChartOptions = {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.address-evolution-chart {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: var(--card-bg, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-lg);
 }
 
 .address-result-card {
