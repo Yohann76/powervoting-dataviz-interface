@@ -179,6 +179,250 @@ const toggleWalletPositions = (address: string) => {
   expandedWallets.value[address] = !isWalletExpanded(address)
 }
 
+// Calculer le multiplicateur estimé pour une position basé sur son type, son état et son DEX
+const estimatePositionMultiplier = (position: any) => {
+  // Pour V2, le multiplicateur peut varier selon le DEX
+  // Pour V3 actif, le multiplicateur peut être plus élevé (2.0x à 4.0x+)
+  // Pour V3 inactif, le multiplicateur est généralement 0 ou très faible
+  
+  if (position.poolType === 'v2') {
+    // V2 pools : multiplicateur peut varier selon le DEX
+    const dexName = (position.dex || '').toLowerCase()
+    
+    // Différents DEX peuvent avoir des multiplicateurs différents
+    // Ces valeurs sont des estimations et peuvent être ajustées selon la configuration réelle
+    if (dexName.includes('sushiswap')) {
+      return 1.5 // Estimation pour Sushiswap V2
+    } else if (dexName.includes('honeyswap')) {
+      return 1.3 // Estimation pour Honeyswap V2
+    } else if (dexName.includes('balancer')) {
+      return 1.4 // Estimation pour Balancer V2
+    } else {
+      // DEX inconnu ou autre : multiplicateur par défaut
+      return 1.5 // Estimation moyenne pour V2
+    }
+  } else if (position.poolType === 'v3') {
+    // V3 pools : multiplicateur dépend de si la position est active
+    if (position.isActive === true) {
+      // Position V3 active : multiplicateur plus élevé
+      // Le multiplicateur réel peut varier selon la position dans la range de prix
+      return 2.5 // Estimation pour V3 actif
+    } else {
+      // Position V3 inactive : pas de boost ou très faible
+      return 0.1 // Très faible multiplicateur pour V3 inactif
+    }
+  }
+  
+  return 1.0 // Par défaut
+}
+
+// Calculer le multiplicateur global de chaque pool en agrégeant toutes les données
+const globalPoolMultipliers = computed(() => {
+  const poolsMap = new Map<string, { totalREG: number, totalPower: number }>()
+  
+  // Parcourir tous les profils pour agréger les données par pool
+  dataStore.poolPowerCorrelation.forEach((profile) => {
+    // Grouper les positions par poolAddress
+    const profilePoolsMap = new Map<string, { positions: any[], totalREG: number, estimatedMultiplier: number }>()
+    
+    profile.positions.forEach((pos: any) => {
+      const poolKey = pos.poolAddress || `${pos.dex}-${pos.poolType}`
+      if (!profilePoolsMap.has(poolKey)) {
+        profilePoolsMap.set(poolKey, { positions: [], totalREG: 0, estimatedMultiplier: 0 })
+      }
+      const pool = profilePoolsMap.get(poolKey)!
+      pool.positions.push(pos)
+      pool.totalREG += pos.regAmount
+      if (pool.estimatedMultiplier === 0) {
+        pool.estimatedMultiplier = estimatePositionMultiplier(pos)
+      }
+    })
+    
+    // Calculer le total des pouvoirs pondérés pour ce wallet
+    let totalWeightedPower = 0
+    profilePoolsMap.forEach((pool) => {
+      totalWeightedPower += pool.totalREG * pool.estimatedMultiplier
+    })
+    
+    // Distribuer le poolVotingShare entre les pools et agréger
+    profilePoolsMap.forEach((pool, poolKey) => {
+      if (!poolsMap.has(poolKey)) {
+        poolsMap.set(poolKey, { totalREG: 0, totalPower: 0 })
+      }
+      const globalPool = poolsMap.get(poolKey)!
+      globalPool.totalREG += pool.totalREG
+      
+      if (totalWeightedPower > 0) {
+        const poolWeightedPower = pool.totalREG * pool.estimatedMultiplier
+        const poolTotalPower = (profile.poolVotingShare * poolWeightedPower) / totalWeightedPower
+        globalPool.totalPower += poolTotalPower
+      }
+    })
+  })
+  
+  // Calculer le multiplicateur global pour chaque pool
+  const multipliers = new Map<string, number>()
+  poolsMap.forEach((pool, poolKey) => {
+    const multiplier = pool.totalREG > 0 ? pool.totalPower / pool.totalREG : 0
+    multipliers.set(poolKey, multiplier)
+  })
+  
+  return multipliers
+})
+
+// Calculer le boost réel vs 1:1 pour un wallet
+// Le boost réel est le ratio : Power (attribué pools) / Liquidité en pools
+const getAveragePoolMultiplier = (profile: any) => {
+  if (!profile || profile.poolLiquidityREG <= 0) {
+    return 0
+  }
+  
+  // Le boost réel est calculé comme le ratio du pouvoir attribué aux pools sur la liquidité
+  // Cela reflète le multiplicateur réel moyen, pas une estimation
+  if (profile.poolVotingShare && profile.poolVotingShare > 0) {
+    return profile.poolVotingShare / profile.poolLiquidityREG
+  }
+  
+  // Si poolVotingShare n'est pas disponible, utiliser le multiplicateur moyen pondéré estimé
+  const poolsMap = new Map<string, { totalREG: number }>()
+  
+  profile.positions.forEach((pos: any) => {
+    const poolKey = pos.poolAddress || `${pos.dex}-${pos.poolType}`
+    if (!poolsMap.has(poolKey)) {
+      poolsMap.set(poolKey, { totalREG: 0 })
+    }
+    const pool = poolsMap.get(poolKey)!
+    pool.totalREG += pos.regAmount
+  })
+  
+  // Calculer le multiplicateur moyen pondéré en utilisant les multiplicateurs globaux
+  let totalWeightedPower = 0
+  let totalREG = 0
+  
+  poolsMap.forEach((pool, poolKey) => {
+    const globalMultiplier = globalPoolMultipliers.value.get(poolKey) || 0
+    const estimatedMultiplier = globalMultiplier > 0 
+      ? globalMultiplier 
+      : estimatePositionMultiplier(profile.positions.find((p: any) => (p.poolAddress || `${p.dex}-${p.poolType}`) === poolKey))
+    
+    totalWeightedPower += pool.totalREG * estimatedMultiplier
+    totalREG += pool.totalREG
+  })
+  
+  return totalREG > 0 ? totalWeightedPower / totalREG : 0
+}
+
+// Calculer le pouvoir de vote et le multiplicateur pour chaque position
+// Le multiplicateur affiché est calculé à partir du pouvoir réel si disponible, sinon estimation
+// Le pouvoir est calculé en distribuant le poolVotingShare proportionnellement
+const getPositionPowerAndMultiplier = (position: any, profile: any) => {
+  if (!profile || profile.poolLiquidityREG <= 0 || profile.poolVotingShare <= 0) {
+    return { power: 0, multiplier: 0 }
+  }
+  
+  const poolKey = position.poolAddress || `${position.dex}-${position.poolType}`
+  
+  // Grouper les positions par poolAddress pour ce wallet
+  const poolsMap = new Map<string, { positions: any[], totalREG: number }>()
+  
+  profile.positions.forEach((pos: any) => {
+    const key = pos.poolAddress || `${pos.dex}-${pos.poolType}`
+    if (!poolsMap.has(key)) {
+      poolsMap.set(key, { positions: [], totalREG: 0 })
+    }
+    const pool = poolsMap.get(key)!
+    pool.positions.push(pos)
+    pool.totalREG += pos.regAmount
+  })
+  
+  // Trouver la pool de cette position
+  const positionPool = poolsMap.get(poolKey)
+  
+  if (!positionPool) {
+    return { power: 0, multiplier: 0 }
+  }
+  
+  // Distribuer le poolVotingShare proportionnellement à la liquidité de chaque pool
+  const poolRatio = positionPool.totalREG / profile.poolLiquidityREG
+  const poolTotalPower = profile.poolVotingShare * poolRatio
+  
+  // Distribuer le pouvoir de vote de la pool proportionnellement à la liquidité de cette position
+  const positionRatio = position.regAmount / positionPool.totalREG
+  const positionPower = poolTotalPower * positionRatio
+  
+  // Toujours utiliser le multiplicateur théorique "ronde" pour l'affichage
+  // (1.3, 1.4, 1.5, 2.5, 0.1, 1.0) indépendamment du multiplicateur réel calculé
+  const poolMultiplier = estimatePositionMultiplier(position)
+  
+  return {
+    power: positionPower,
+    multiplier: poolMultiplier
+  }
+}
+
+// Compter les positions V2 et V3 pour un profil
+const getPositionCounts = (profile: any) => {
+  if (!profile || !profile.positions) {
+    return { v2: 0, v3: 0 }
+  }
+  
+  let v2Count = 0
+  let v3Count = 0
+  
+  profile.positions.forEach((pos: any) => {
+    if (pos.poolType === 'v2') {
+      v2Count++
+    } else if (pos.poolType === 'v3') {
+      v3Count++
+    }
+  })
+  
+  return { v2: v2Count, v3: v3Count }
+}
+
+// Calculer le Power (attribué pools) pour V2 et V3 séparément
+const getPowerByPoolType = (profile: any) => {
+  if (!profile || !profile.positions || profile.poolLiquidityREG <= 0 || profile.poolVotingShare <= 0) {
+    return { v2: 0, v3: 0 }
+  }
+  
+  const poolsMap = new Map<string, { positions: any[], totalREG: number, poolType: string }>()
+  
+  profile.positions.forEach((pos: any) => {
+    const key = pos.poolAddress || `${pos.dex}-${pos.poolType}`
+    if (!poolsMap.has(key)) {
+      poolsMap.set(key, { positions: [], totalREG: 0, poolType: pos.poolType })
+    }
+    const pool = poolsMap.get(key)!
+    pool.positions.push(pos)
+    pool.totalREG += pos.regAmount
+  })
+  
+  let v2Power = 0
+  let v3Power = 0
+  
+  poolsMap.forEach((pool, poolKey) => {
+    const poolRatio = pool.totalREG / profile.poolLiquidityREG
+    const poolTotalPower = profile.poolVotingShare * poolRatio
+    
+    if (pool.poolType === 'v2') {
+      v2Power += poolTotalPower
+    } else if (pool.poolType === 'v3') {
+      v3Power += poolTotalPower
+    }
+  })
+  
+  return { v2: v2Power, v3: v3Power }
+}
+
+// Déterminer si une position V3 est active
+const isPositionActive = (position: any) => {
+  if (position.poolType !== 'v3') {
+    return null // Pas applicable pour V2
+  }
+  return position.isActive === true
+}
+
 const toggleAddressResultDetails = (date: string) => {
   expandedAddressResults.value[date] = !expandedAddressResults.value[date]
 }
@@ -841,6 +1085,20 @@ const poolPowerChartOptions = {
       </div>
     </div>
 
+    <div class="multiplier-info" style="margin: 1.5rem 0; padding: 1rem; background: var(--card-bg, rgba(255, 255, 255, 0.05)); border-radius: 8px; border-left: 3px solid var(--primary-color, #4a90e2);">
+      <p style="margin: 0 0 0.75rem 0; font-weight: 600; color: var(--text-primary); font-size: 0.9rem;">
+        BETA Les multiplicateurs :
+      </p>
+      <ul style="margin: 0; padding-left: 1.5rem; color: var(--text-secondary); font-size: 0.85rem; line-height: 1.6;">
+        <li><strong>Sushiswap V2</strong> : ×1.5</li>
+        <li><strong>Honeyswap V2</strong> : ×1.3</li>
+        <li><strong>Balancer V2</strong> : ×1.4</li>
+        <li><strong>Sushiswap V3 actif</strong> : ×2.5</li>
+        <li><strong>Sushiswap V3 inactif</strong> : ×0.1</li>
+        <li><strong>Par défaut</strong> : ×1.0</li>
+      </ul>
+    </div>
+
     <div
       class="correlation-table"
       v-if="dataStore.poolPowerCorrelation && dataStore.poolPowerCorrelation.length"
@@ -866,12 +1124,22 @@ const poolPowerChartOptions = {
           <div class="metric">
             <span class="metric-label">Boost vs 1:1</span>
             <span class="metric-value">
-              {{ profile.boostMultiplier ? profile.boostMultiplier.toFixed(2) + 'x' : '–' }}
+              {{ getAveragePoolMultiplier(profile) ? getAveragePoolMultiplier(profile).toFixed(2) + 'x' : '–' }}
             </span>
           </div>
           <div class="metric positions-count">
             <span class="metric-label">Positions</span>
-            <span class="metric-value">{{ profile.positions.length }}</span>
+            <div class="metric-value" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <span>{{ profile.positions.length }}</span>
+              <div v-if="getPositionCounts(profile).v2 > 0 || getPositionCounts(profile).v3 > 0" class="position-type-breakdown" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <span v-if="getPositionCounts(profile).v2 > 0" class="position-badge position-badge-v2" style="display: inline-flex; align-items: center; padding: 0.25rem 0.5rem; background: rgba(74, 144, 226, 0.15); border: 1px solid rgba(74, 144, 226, 0.3); border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; color: #60a5fa;">
+                  V2: {{ getPositionCounts(profile).v2 }}
+                </span>
+                <span v-if="getPositionCounts(profile).v3 > 0" class="position-badge position-badge-v3" style="display: inline-flex; align-items: center; padding: 0.25rem 0.5rem; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; color: #4ade80;">
+                  V3: {{ getPositionCounts(profile).v3 }}
+                </span>
+              </div>
+            </div>
           </div>
           <button
             class="positions-toggle"
@@ -884,7 +1152,12 @@ const poolPowerChartOptions = {
           <div class="detail-metrics">
             <div class="metric">
               <span class="metric-label">Power (attribué pools)</span>
-              <span class="metric-value">{{ formatNumber(profile.poolVotingShare) }}</span>
+              <span class="metric-value">
+                {{ formatNumber(profile.poolVotingShare) }}
+                <span v-if="getPowerByPoolType(profile).v2 > 0 || getPowerByPoolType(profile).v3 > 0" class="power-type-breakdown" style="display: block; font-size: 0.75em; color: var(--text-secondary); margin-top: 0.25rem;">
+                  V2: {{ formatNumber(getPowerByPoolType(profile).v2) }}, V3: {{ formatNumber(getPowerByPoolType(profile).v3) }}
+                </span>
+              </span>
             </div>
             <div class="metric">
               <span class="metric-label">Wallet hors pools</span>
@@ -894,14 +1167,28 @@ const poolPowerChartOptions = {
           <div class="positions-list">
             <div
               class="position-pill"
+              :class="{
+                'position-active': position.poolType === 'v3' && isPositionActive(position) === true,
+                'position-inactive': position.poolType === 'v3' && isPositionActive(position) === false
+              }"
               v-for="position in profile.positions"
               :key="`${profile.address}-${position.poolAddress || 'pool'}-${position.dex}-${position.regAmount}`"
             >
-              <span class="pill-dex">{{ position.dex }} • {{ position.poolType.toUpperCase() }}</span>
-              <span class="pill-pool">
-                {{ position.poolAddress ? formatAddress(position.poolAddress) : 'N/A' }}
-              </span>
-              <span class="pill-value">{{ formatNumber(position.regAmount) }} REG</span>
+              <div class="position-pill-header">
+                <span class="pill-dex">{{ position.dex }} • {{ position.poolType.toUpperCase() }}</span>
+                <span class="pill-pool">
+                  {{ position.poolAddress ? formatAddress(position.poolAddress) : 'N/A' }}
+                </span>
+              </div>
+              <div class="position-pill-details">
+                <span class="pill-value">{{ formatNumber(position.regAmount) }} REG</span>
+                <span class="pill-power" v-if="getPositionPowerAndMultiplier(position, profile).power > 0">
+                  Power: {{ formatNumber(getPositionPowerAndMultiplier(position, profile).power) }}
+                </span>
+                <span class="pill-multiplier" v-if="getPositionPowerAndMultiplier(position, profile).multiplier > 0">
+                  ×{{ getPositionPowerAndMultiplier(position, profile).multiplier.toFixed(2) }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1584,13 +1871,43 @@ const poolPowerChartOptions = {
 
 .position-pill {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 0.75rem 1rem;
   background: var(--glass-bg);
   border: 1px solid var(--border-color);
-  border-radius: 999px;
+  border-left: 3px solid var(--border-color);
+  border-radius: 0.75rem;
   font-size: 0.85rem;
+  min-width: 200px;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.position-pill.position-active {
+  border-left-color: #22c55e !important; /* Vert plus pétant pour actif */
+  background-color: rgba(34, 197, 94, 0.1);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
+}
+
+.position-pill.position-inactive {
+  border-left-color: #f87171 !important; /* Rouge plus doux et cohérent pour inactif */
+  background-color: rgba(248, 113, 113, 0.08);
+}
+
+.position-pill-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.position-pill-details {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .pill-dex {
@@ -1601,11 +1918,27 @@ const poolPowerChartOptions = {
 .pill-pool {
   font-family: 'Courier New', monospace;
   color: var(--text-secondary);
+  font-size: 0.8rem;
 }
 
 .pill-value {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.pill-power {
+  font-weight: 500;
+  color: var(--accent-color);
+  font-size: 0.8rem;
+}
+
+.pill-multiplier {
+  font-weight: 700;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
 }
 
 .pill-more {

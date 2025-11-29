@@ -298,8 +298,47 @@ export const useDataStore = defineStore('data', () => {
         const walletDirectREG = Math.max(profile.walletREG - profile.poolLiquidityREG, 0)
         const walletVotingShare = Math.min(powerValue, walletDirectREG)
         const poolVotingShare = Math.max(powerValue - walletDirectREG, 0)
-        const boostMultiplier =
-          profile.poolLiquidityREG > 0 ? poolVotingShare / profile.poolLiquidityREG : 0
+        
+        // Calculer le multiplicateur moyen pondéré des pools
+        // En regroupant les positions par pool et en utilisant les multiplicateurs estimés
+        const poolsMap = new Map<string, { totalREG: number, multiplier: number }>()
+        
+        profile.positions.forEach((pos: any) => {
+          const poolKey = pos.poolAddress || `${pos.dex}-${pos.poolType}`
+          if (!poolsMap.has(poolKey)) {
+            // Estimation du multiplicateur basé sur le type de pool
+            let estimatedMultiplier = 1.5 // V2 par défaut
+            if (pos.poolType === 'v3') {
+              estimatedMultiplier = pos.isActive === true ? 2.5 : 0.1
+            } else if (pos.poolType === 'v2') {
+              const dexName = (pos.dex || '').toLowerCase()
+              if (dexName.includes('sushiswap')) {
+                estimatedMultiplier = 1.5
+              } else if (dexName.includes('honeyswap')) {
+                estimatedMultiplier = 1.3
+              } else if (dexName.includes('balancer')) {
+                estimatedMultiplier = 1.4
+              }
+            }
+            poolsMap.set(poolKey, { totalREG: 0, multiplier: estimatedMultiplier })
+          }
+          const pool = poolsMap.get(poolKey)!
+          pool.totalREG += pos.regAmount
+        })
+        
+        // Calculer le multiplicateur moyen pondéré
+        let totalWeightedPower = 0
+        poolsMap.forEach((pool) => {
+          totalWeightedPower += pool.totalREG * pool.multiplier
+        })
+        
+        // Le boostMultiplier est le multiplicateur moyen pondéré
+        // Si poolVotingShare est disponible, on l'utilise pour un calcul plus précis
+        const boostMultiplier = profile.poolLiquidityREG > 0 && poolVotingShare > 0
+          ? poolVotingShare / profile.poolLiquidityREG
+          : (profile.poolLiquidityREG > 0 
+              ? totalWeightedPower / profile.poolLiquidityREG 
+              : 0)
 
         return {
           ...profile,
