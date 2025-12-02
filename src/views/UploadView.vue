@@ -14,18 +14,70 @@ const isLoading = ref(false)
 const error = ref<string>('')
 const snapshots = ref<SnapshotInfo[]>([])
 const isLoadingSnapshots = ref(false)
+const isDraggingBalances = ref(false)
+const isDraggingPowerVoting = ref(false)
 
 const handleFileChange = (event: Event, type: 'balances' | 'powerVoting') => {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
 
   if (file) {
-    if (type === 'balances') {
-      balancesFile.value = file
+    setFile(file, type)
+  }
+}
+
+const setFile = (file: File, type: 'balances' | 'powerVoting') => {
+  // Créer une nouvelle référence pour forcer la réactivité Vue
+  if (type === 'balances') {
+    balancesFile.value = file
+  } else {
+    powerVotingFile.value = file
+  }
+  error.value = ''
+  // Forcer la mise à jour de l'affichage
+  console.log(`File ${type} set:`, file.name)
+}
+
+const handleDragOver = (event: DragEvent, type: 'balances' | 'powerVoting') => {
+  event.preventDefault()
+  event.stopPropagation()
+  if (type === 'balances') {
+    isDraggingBalances.value = true
+  } else {
+    isDraggingPowerVoting.value = true
+  }
+}
+
+const handleDragLeave = (event: DragEvent, type: 'balances' | 'powerVoting') => {
+  event.preventDefault()
+  event.stopPropagation()
+  if (type === 'balances') {
+    isDraggingBalances.value = false
+  } else {
+    isDraggingPowerVoting.value = false
+  }
+}
+
+const handleDrop = (event: DragEvent, type: 'balances' | 'powerVoting') => {
+  event.preventDefault()
+  event.stopPropagation()
+  
+  if (type === 'balances') {
+    isDraggingBalances.value = false
+  } else {
+    isDraggingPowerVoting.value = false
+  }
+
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    const file = files[0]
+    // Vérifier l'extension du fichier
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (extension === 'csv' || extension === 'json') {
+      setFile(file, type)
     } else {
-      powerVotingFile.value = file
+      error.value = 'Format de fichier non supporté. Utilisez CSV ou JSON.'
     }
-    error.value = ''
   }
 }
 
@@ -183,11 +235,17 @@ const formatDiff = (diff: number, isInteger = false) => {
 
       <div class="upload-section">
         <div class="file-upload">
-          <label class="file-label">
+          <label
+            class="file-label"
+            :class="{ 'dragging': isDraggingBalances }"
+            @dragover="(e) => handleDragOver(e, 'balances')"
+            @dragleave="(e) => handleDragLeave(e, 'balances')"
+            @drop="(e) => handleDrop(e, 'balances')"
+          >
             <div class="file-icon">📂</div>
             <div class="file-info">
               <span class="file-title">Balances REG</span>
-              <span class="file-subtitle">CSV ou JSON</span>
+              <span class="file-subtitle">CSV ou JSON - Glissez-déposez ou cliquez</span>
             </div>
             <input
               type="file"
@@ -200,11 +258,17 @@ const formatDiff = (diff: number, isInteger = false) => {
         </div>
 
         <div class="file-upload">
-          <label class="file-label">
+          <label
+            class="file-label"
+            :class="{ 'dragging': isDraggingPowerVoting }"
+            @dragover="(e) => handleDragOver(e, 'powerVoting')"
+            @dragleave="(e) => handleDragLeave(e, 'powerVoting')"
+            @drop="(e) => handleDrop(e, 'powerVoting')"
+          >
             <div class="file-icon">⚡</div>
             <div class="file-info">
               <span class="file-title">Power Voting REG</span>
-              <span class="file-subtitle">CSV ou JSON</span>
+              <span class="file-subtitle">CSV ou JSON - Glissez-déposez ou cliquez</span>
             </div>
             <input
               type="file"
@@ -397,6 +461,14 @@ const formatDiff = (diff: number, isInteger = false) => {
   background: var(--bg-tertiary);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+}
+
+.file-label.dragging {
+  border-color: var(--primary-color);
+  background: rgba(99, 102, 241, 0.2);
+  border-style: solid;
+  transform: scale(1.02);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
 }
 
 .file-input {

@@ -27,7 +27,7 @@ import { RouterLink, RouterView } from 'vue-router'
 
     <footer class="app-footer">
       <div class="container">
-        <p>&copy; 2025 RealT Power Voting Analysis | Built with Vue.js</p>
+        <p>&copy; 2025 RealT Power Voting Analysis | A Realtoken DAO tool, created and managed by the Power Voting Committee</p>
       </div>
     </footer>
   </div>
