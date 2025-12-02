@@ -151,6 +151,8 @@ onMounted(async () => {
 
   try {
     availableSnapshots.value = await loadSnapshotManifest()
+    // Load snapshot statistics
+    await loadSnapshotStats()
     // Lancer automatiquement la recherche avec l'adresse par défaut
     if (searchAddress.value.trim()) {
       await searchAddressAcrossSnapshots()
@@ -716,6 +718,98 @@ const loadComparisonSnapshot = async () => {
 const clearComparison = () => {
   dataStore.clearComparisonSnapshot()
   selectedComparisonSnapshot.value = null
+}
+
+// Snapshot statistics for comparison table
+const snapshotStats = ref<Array<{
+  date: string
+  dateFormatted: string
+  isCurrent: boolean
+  wallets: number
+  reg: number
+  power: number
+  walletsDiff?: number
+  regDiff?: number
+  powerDiff?: number
+}>>([])
+
+const loadSnapshotStats = async () => {
+  snapshotStats.value = []
+  
+  try {
+    // Add current snapshot
+    const currentWallets = dataStore.balances.length
+    const currentReg = dataStore.balances.reduce((sum, b) => {
+      return sum + parseFloat(String(b.totalBalanceREG || b.totalBalance || 0))
+    }, 0)
+    const currentPower = dataStore.powerVoting.reduce((sum, p) => {
+      return sum + parseFloat(String(p.powerVoting || 0))
+    }, 0)
+    
+    snapshotStats.value.push({
+      date: 'Actuel',
+      dateFormatted: 'Snapshot actuel (uploadé)',
+      isCurrent: true,
+      wallets: currentWallets,
+      reg: currentReg,
+      power: currentPower,
+    })
+    
+    // Load all historical snapshots
+    for (const snapshot of availableSnapshots.value) {
+      try {
+        const { balances, powerVoting } = await loadSnapshot(snapshot)
+        
+        const balancesArray = balances.result?.balances || balances
+        const powerVotingArray = powerVoting.result?.powerVoting || powerVoting
+        
+        const wallets = Array.isArray(balancesArray) ? balancesArray.length : 0
+        const reg = Array.isArray(balancesArray)
+          ? balancesArray.reduce((sum: number, b: any) => {
+              return sum + parseFloat(String(b.totalBalanceREG || b.totalBalance || 0))
+            }, 0)
+          : 0
+        const power = Array.isArray(powerVotingArray)
+          ? powerVotingArray.reduce((sum: number, p: any) => {
+              return sum + parseFloat(String(p.powerVoting || 0))
+            }, 0)
+          : 0
+        
+        snapshotStats.value.push({
+          date: snapshot.date,
+          dateFormatted: formatSnapshotDate(snapshot.date),
+          isCurrent: false,
+          wallets,
+          reg,
+          power,
+        })
+      } catch (err) {
+        console.error(`Failed to load snapshot ${snapshot.date}:`, err)
+      }
+    }
+    
+    // Sort by date (current first, then newest first)
+    snapshotStats.value.sort((a, b) => {
+      if (a.isCurrent) return -1
+      if (b.isCurrent) return 1
+      const dateA = a.date.split('-').reverse().join('-')
+      const dateB = b.date.split('-').reverse().join('-')
+      return dateB.localeCompare(dateA)
+    })
+    
+    // Calculate differences
+    for (let i = 0; i < snapshotStats.value.length; i++) {
+      if (i < snapshotStats.value.length - 1) {
+        const current = snapshotStats.value[i]
+        const previous = snapshotStats.value[i + 1]
+        current.walletsDiff = current.wallets - previous.wallets
+        current.regDiff = current.reg - previous.reg
+        current.powerDiff = current.power - previous.power
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load snapshot stats:', err)
+  }
 }
 
 // Search address across all snapshots
@@ -1586,6 +1680,56 @@ const poolPowerChartOptions = {
                 📋
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Snapshots Comparison Table -->
+    <div class="section-header" style="margin-top: 4rem;">
+      <h2>📸 Snapshots historiques ({{ snapshotStats.length }})</h2>
+      <p>Comparaison de tous les snapshots disponibles, y compris le snapshot actuel</p>
+    </div>
+
+    <div class="snapshots-table-container">
+      <div class="snapshots-table">
+        <div
+          v-for="(stat, index) in snapshotStats"
+          :key="stat.date"
+          class="snapshot-row"
+          :class="{ 'current-snapshot-row': stat.isCurrent }"
+        >
+          <div class="snapshot-date-col">
+            <span v-if="stat.isCurrent" class="current-badge">Actuel</span>
+            <span v-else class="snapshot-date">{{ stat.date }}</span>
+            <span v-if="!stat.isCurrent" class="snapshot-date-formatted">{{ stat.dateFormatted }}</span>
+          </div>
+          
+          <div class="snapshot-stat-col">
+            <span class="stat-icon">👥</span>
+            <span class="stat-value">{{ formatInteger(stat.wallets) }}</span>
+            <span v-if="stat.walletsDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.walletsDiff > 0, 'negative': stat.walletsDiff < 0 }">
+              {{ stat.walletsDiff > 0 ? '+' : '' }}{{ formatInteger(stat.walletsDiff) }}
+            </span>
+            <span class="stat-label">wallets</span>
+          </div>
+          
+          <div class="snapshot-stat-col">
+            <span class="stat-icon">💰</span>
+            <span class="stat-value">{{ formatNumber(stat.reg) }}</span>
+            <span v-if="stat.regDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.regDiff > 0, 'negative': stat.regDiff < 0 }">
+              {{ stat.regDiff > 0 ? '+' : '' }}{{ formatNumber(stat.regDiff) }}
+            </span>
+            <span class="stat-label">REG</span>
+          </div>
+          
+          <div class="snapshot-stat-col">
+            <span class="stat-icon">⚡</span>
+            <span class="stat-value">{{ formatNumber(stat.power) }}</span>
+            <span v-if="stat.powerDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.powerDiff > 0, 'negative': stat.powerDiff < 0 }">
+              {{ stat.powerDiff > 0 ? '+' : '' }}{{ formatNumber(stat.powerDiff) }}
+            </span>
+            <span class="stat-label">Power</span>
           </div>
         </div>
       </div>
@@ -2587,6 +2731,134 @@ const poolPowerChartOptions = {
   .result-details-row {
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
+  }
+}
+
+/* Snapshots Comparison Table */
+.snapshots-table-container {
+  margin-top: 2rem;
+  margin-bottom: 3rem;
+}
+
+.snapshots-table {
+  background: var(--card-bg);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.snapshot-row {
+  display: grid;
+  grid-template-columns: 200px repeat(3, 1fr);
+  gap: 2rem;
+  align-items: center;
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s ease;
+}
+
+.snapshot-row:last-child {
+  border-bottom: none;
+}
+
+.snapshot-row:hover {
+  background: var(--glass-bg);
+}
+
+.snapshot-row.current-snapshot-row {
+  background: rgba(74, 144, 226, 0.1);
+  border-left: 3px solid var(--primary-color);
+}
+
+.snapshot-date-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.snapshot-date {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.snapshot-date-formatted {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.snapshot-stat-col {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stat-icon {
+  font-size: 1.25rem;
+}
+
+.stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+  min-width: 120px;
+}
+
+.stat-diff {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-family: 'Courier New', monospace;
+}
+
+.stat-diff.positive {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.stat-diff.negative {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 1024px) {
+  .snapshot-row {
+    grid-template-columns: 150px repeat(3, 1fr);
+    gap: 1rem;
+    padding: 1rem 0.75rem;
+  }
+  
+  .stat-value {
+    font-size: 0.95rem;
+    min-width: 100px;
+  }
+}
+
+@media (max-width: 768px) {
+  .snapshot-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+  
+  .snapshot-date-col {
+    margin-bottom: 0.5rem;
+  }
+  
+  .snapshot-stat-col {
+    justify-content: space-between;
   }
 }
 </style>
