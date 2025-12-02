@@ -61,6 +61,108 @@ const addressSearchResults = ref<Array<{
 }>>([])
 const isSearchingAddress = ref(false)
 
+// Helper function to analyze pools for an entire snapshot
+const analyzeSnapshotPools = (balancesArray: any[], powerVotingArray: any[]) => {
+  let v2Pools = 0
+  let v3Pools = 0
+  let v3Active = 0
+  let v3Inactive = 0
+  const walletsWithPools = new Set<string>()
+  
+  // Analyser toutes les positions de pools
+  balancesArray.forEach((wallet: any) => {
+    if (!wallet.sourceBalance) return
+    
+    let hasPools = false
+    const networks = wallet.sourceBalance
+    
+    Object.entries(networks).forEach(([networkName, networkValue]: [string, any]) => {
+      const dexs = networkValue?.dexs
+      if (!dexs) return
+      
+      Object.entries(dexs).forEach(([dexName, rawPositions]: [string, any]) => {
+        if (!Array.isArray(rawPositions)) return
+        
+        rawPositions.forEach((pos: any) => {
+          const regAmount = parseFloat(String(pos.equivalentREG || '0'))
+          if (regAmount <= 0) return
+          
+          hasPools = true
+          // Détecter V3 : plusieurs méthodes selon les données disponibles
+          // 1. Si poolType est défini explicitement
+          const hasPoolType = pos.poolType !== undefined
+          const isV3ByType = hasPoolType && (pos.poolType === 'v3' || pos.poolType === 'V3')
+          
+          // 2. Si tickLower/tickUpper sont définis (format standard)
+          const hasTickRange = pos.tickLower !== undefined && pos.tickUpper !== undefined
+          
+          // 3. Si minPrice/maxPrice sont définis ET qu'il y a un feeTier (indicateur V3)
+          const hasPriceRange = pos.minPrice !== undefined && pos.maxPrice !== undefined && 
+                                typeof pos.minPrice === 'number' && typeof pos.maxPrice === 'number'
+          const hasFeeTier = pos.feeTier !== undefined
+          
+          // V3 si : poolType = v3, OU tickLower/tickUpper présents, OU (minPrice/maxPrice + feeTier)
+          const isV3 = isV3ByType || hasTickRange || (hasPriceRange && hasFeeTier)
+          
+          // Pour V3, vérifier isActive. Si non défini, considérer comme actif si c'est V2, inactif si V3
+          const isActive = pos.isActive !== undefined ? pos.isActive : (isV3 ? false : true)
+          
+          if (isV3) {
+            v3Pools++
+            if (isActive) {
+              v3Active++
+            } else {
+              v3Inactive++
+            }
+          } else {
+            v2Pools++
+          }
+        })
+      })
+    })
+    
+    if (hasPools) {
+      walletsWithPools.add(wallet.walletAddress || '')
+    }
+  })
+  
+  // Calculer l'indice de concentration du pouvoir de vote pour plusieurs pourcentages
+  const powerConcentration: Record<string, number> = {
+    top10: 0,
+    top15: 0,
+    top20: 0,
+    top25: 0,
+    top50: 0,
+  }
+  
+  if (powerVotingArray.length > 0) {
+    const sortedPower = [...powerVotingArray]
+      .map((p: any) => parseFloat(String(p.powerVoting || 0)))
+      .sort((a, b) => b - a)
+    
+    const totalPower = sortedPower.reduce((sum, p) => sum + p, 0)
+    if (totalPower > 0) {
+      const percentages = [0.1, 0.15, 0.2, 0.25, 0.5]
+      const keys = ['top10', 'top15', 'top20', 'top25', 'top50']
+      
+      percentages.forEach((percent, index) => {
+        const topCount = Math.max(1, Math.floor(sortedPower.length * percent))
+        const topPower = sortedPower.slice(0, topCount).reduce((sum, p) => sum + p, 0)
+        powerConcentration[keys[index]] = (topPower / totalPower) * 100
+      })
+    }
+  }
+  
+  return {
+    v2Pools,
+    v3Pools,
+    v3Active,
+    v3Inactive,
+    walletsWithPools: walletsWithPools.size,
+    powerConcentration,
+  }
+}
+
 // Helper function to analyze pool positions for a wallet
 const analyzePoolPositions = (walletData: any) => {
   if (!walletData || !walletData.sourceBalance) {
@@ -731,7 +833,34 @@ const snapshotStats = ref<Array<{
   walletsDiff?: number
   regDiff?: number
   powerDiff?: number
+  poolMetrics?: {
+    v2Pools: number
+    v3Pools: number
+    v3Active: number
+    v3Inactive: number
+    walletsWithPools: number
+    powerConcentration: {
+      top10: number
+      top15: number
+      top20: number
+      top25: number
+      top50: number
+    }
+  }
 }>>([])
+const expandedSnapshots = ref<Set<string>>(new Set())
+
+const toggleSnapshotDetails = (date: string) => {
+  if (expandedSnapshots.value.has(date)) {
+    expandedSnapshots.value.delete(date)
+  } else {
+    expandedSnapshots.value.add(date)
+  }
+}
+
+const isSnapshotExpanded = (date: string) => {
+  return expandedSnapshots.value.has(date)
+}
 
 const loadSnapshotStats = async () => {
   snapshotStats.value = []
@@ -746,6 +875,8 @@ const loadSnapshotStats = async () => {
       return sum + parseFloat(String(p.powerVoting || 0))
     }, 0)
     
+    const currentPoolMetrics = analyzeSnapshotPools(dataStore.balances, dataStore.powerVoting)
+    
     snapshotStats.value.push({
       date: 'Actuel',
       dateFormatted: 'Snapshot actuel (uploadé)',
@@ -753,6 +884,7 @@ const loadSnapshotStats = async () => {
       wallets: currentWallets,
       reg: currentReg,
       power: currentPower,
+      poolMetrics: currentPoolMetrics,
     })
     
     // Load all historical snapshots
@@ -775,6 +907,11 @@ const loadSnapshotStats = async () => {
             }, 0)
           : 0
         
+        const poolMetrics = analyzeSnapshotPools(
+          Array.isArray(balancesArray) ? balancesArray : [],
+          Array.isArray(powerVotingArray) ? powerVotingArray : []
+        )
+        
         snapshotStats.value.push({
           date: snapshot.date,
           dateFormatted: formatSnapshotDate(snapshot.date),
@@ -782,6 +919,7 @@ const loadSnapshotStats = async () => {
           wallets,
           reg,
           power,
+          poolMetrics,
         })
       } catch (err) {
         console.error(`Failed to load snapshot ${snapshot.date}:`, err)
@@ -1699,37 +1837,110 @@ const poolPowerChartOptions = {
           class="snapshot-row"
           :class="{ 'current-snapshot-row': stat.isCurrent }"
         >
-          <div class="snapshot-date-col">
-            <span v-if="stat.isCurrent" class="current-badge">Actuel</span>
-            <span v-else class="snapshot-date">{{ stat.date }}</span>
-            <span v-if="!stat.isCurrent" class="snapshot-date-formatted">{{ stat.dateFormatted }}</span>
-          </div>
-          
-          <div class="snapshot-stat-col">
+          <div class="snapshot-row-main">
+            <div class="snapshot-date-col">
+              <span v-if="stat.isCurrent" class="current-badge">Actuel</span>
+              <span v-else class="snapshot-date">{{ stat.date }}</span>
+              <span v-if="!stat.isCurrent" class="snapshot-date-formatted">{{ stat.dateFormatted }}</span>
+            </div>
+            
+            <div class="snapshot-stat-col">
             <span class="stat-icon">👥</span>
             <span class="stat-value">{{ formatInteger(stat.wallets) }}</span>
             <span v-if="stat.walletsDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.walletsDiff > 0, 'negative': stat.walletsDiff < 0 }">
               {{ stat.walletsDiff > 0 ? '+' : '' }}{{ formatInteger(stat.walletsDiff) }}
             </span>
-            <span class="stat-label">wallets</span>
+              <span class="stat-label">wallets</span>
+            </div>
+            
+            <div class="snapshot-stat-col">
+              <span class="stat-icon">💰</span>
+              <span class="stat-value">{{ formatNumber(stat.reg) }}</span>
+              <span v-if="stat.regDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.regDiff > 0, 'negative': stat.regDiff < 0 }">
+                {{ stat.regDiff > 0 ? '+' : '' }}{{ formatNumber(stat.regDiff) }}
+              </span>
+              <span class="stat-label">REG</span>
+            </div>
+            
+            <div class="snapshot-stat-col">
+              <span class="stat-icon">⚡</span>
+              <span class="stat-value">{{ formatNumber(stat.power) }}</span>
+              <span v-if="stat.powerDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.powerDiff > 0, 'negative': stat.powerDiff < 0 }">
+                {{ stat.powerDiff > 0 ? '+' : '' }}{{ formatNumber(stat.powerDiff) }}
+              </span>
+              <span class="stat-label">Power</span>
+            </div>
+            
+            <div class="snapshot-details-toggle">
+              <button
+                @click="toggleSnapshotDetails(stat.date)"
+                class="btn-expand-snapshot"
+                :title="isSnapshotExpanded(stat.date) ? 'Masquer les détails' : 'Afficher les détails'"
+              >
+                {{ isSnapshotExpanded(stat.date) ? '▼' : '▶' }}
+              </button>
+            </div>
           </div>
           
-          <div class="snapshot-stat-col">
-            <span class="stat-icon">💰</span>
-            <span class="stat-value">{{ formatNumber(stat.reg) }}</span>
-            <span v-if="stat.regDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.regDiff > 0, 'negative': stat.regDiff < 0 }">
-              {{ stat.regDiff > 0 ? '+' : '' }}{{ formatNumber(stat.regDiff) }}
-            </span>
-            <span class="stat-label">REG</span>
-          </div>
-          
-          <div class="snapshot-stat-col">
-            <span class="stat-icon">⚡</span>
-            <span class="stat-value">{{ formatNumber(stat.power) }}</span>
-            <span v-if="stat.powerDiff !== undefined" class="stat-diff" :class="{ 'positive': stat.powerDiff > 0, 'negative': stat.powerDiff < 0 }">
-              {{ stat.powerDiff > 0 ? '+' : '' }}{{ formatNumber(stat.powerDiff) }}
-            </span>
-            <span class="stat-label">Power</span>
+          <!-- Dropdown avec les métriques détaillées -->
+          <div
+            v-if="isSnapshotExpanded(stat.date) && stat.poolMetrics"
+            class="snapshot-details-dropdown"
+          >
+            <div class="pool-metrics-grid">
+              <div class="pool-metric-item">
+                <span class="metric-label">Pools V2</span>
+                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v2Pools) }}</span>
+              </div>
+              <div class="pool-metric-item">
+                <span class="metric-label">Pools V3</span>
+                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Pools) }}</span>
+              </div>
+              <div class="pool-metric-item">
+                <span class="metric-label">V3 Actives</span>
+                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Active) }}</span>
+              </div>
+              <div class="pool-metric-item">
+                <span class="metric-label">V3 Inactives</span>
+                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Inactive) }}</span>
+              </div>
+              <div class="pool-metric-item">
+                <span class="metric-label">Wallets avec pools</span>
+                <span class="metric-value">{{ formatInteger(stat.poolMetrics.walletsWithPools) }}</span>
+              </div>
+              <div class="pool-metric-item concentration-item">
+                <div class="concentration-header">
+                  <span class="metric-label">
+                    Concentration Power
+                    <span class="concentration-explanation-inline">
+                      (Top X% détient Y% de la supply du power voting)
+                    </span>
+                  </span>
+                </div>
+                <div class="concentration-values">
+                  <div class="concentration-row">
+                    <span class="concentration-label">Top 10%:</span>
+                    <span class="concentration-value">{{ formatNumber(stat.poolMetrics.powerConcentration.top10) }}%</span>
+                  </div>
+                  <div class="concentration-row">
+                    <span class="concentration-label">Top 15%:</span>
+                    <span class="concentration-value">{{ formatNumber(stat.poolMetrics.powerConcentration.top15) }}%</span>
+                  </div>
+                  <div class="concentration-row">
+                    <span class="concentration-label">Top 20%:</span>
+                    <span class="concentration-value">{{ formatNumber(stat.poolMetrics.powerConcentration.top20) }}%</span>
+                  </div>
+                  <div class="concentration-row">
+                    <span class="concentration-label">Top 25%:</span>
+                    <span class="concentration-value">{{ formatNumber(stat.poolMetrics.powerConcentration.top25) }}%</span>
+                  </div>
+                  <div class="concentration-row">
+                    <span class="concentration-label">Top 50%:</span>
+                    <span class="concentration-value">{{ formatNumber(stat.poolMetrics.powerConcentration.top50) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2750,13 +2961,18 @@ const poolPowerChartOptions = {
 }
 
 .snapshot-row {
-  display: grid;
-  grid-template-columns: 200px repeat(3, 1fr);
-  gap: 2rem;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   padding: 1.25rem 1rem;
   border-bottom: 1px solid var(--border-color);
   transition: background-color 0.2s ease;
+}
+
+.snapshot-row-main {
+  display: grid;
+  grid-template-columns: 200px repeat(3, 1fr) auto;
+  gap: 2rem;
+  align-items: center;
 }
 
 .snapshot-row:last-child {
@@ -2833,24 +3049,144 @@ const poolPowerChartOptions = {
   letter-spacing: 0.05em;
 }
 
+.snapshot-details-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-expand-snapshot {
+  padding: 0.5rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  color: var(--primary-color);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 32px;
+  text-align: center;
+  line-height: 1;
+}
+
+.btn-expand-snapshot:hover {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.snapshot-details-dropdown {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  animation: slideDown 0.3s ease;
+}
+
+.pool-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem;
+  background: var(--glass-bg);
+  border-radius: 0.5rem;
+}
+
+.pool-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pool-metric-item .metric-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.pool-metric-item .metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.metric-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.concentration-item {
+  grid-column: span 2;
+}
+
+.concentration-header {
+  margin-bottom: 0.5rem;
+}
+
+.concentration-explanation-inline {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: normal;
+  margin-left: 0.5rem;
+}
+
+.concentration-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.concentration-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.concentration-row:last-child {
+  border-bottom: none;
+}
+
+.concentration-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.concentration-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  font-family: 'Courier New', monospace;
+}
+
 @media (max-width: 1024px) {
-  .snapshot-row {
-    grid-template-columns: 150px repeat(3, 1fr);
+  .snapshot-row-main {
+    grid-template-columns: 150px repeat(3, 1fr) auto;
     gap: 1rem;
-    padding: 1rem 0.75rem;
   }
   
   .stat-value {
     font-size: 0.95rem;
     min-width: 100px;
   }
+  
+  .pool-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
 }
 
 @media (max-width: 768px) {
-  .snapshot-row {
+  .snapshot-row-main {
     grid-template-columns: 1fr;
     gap: 0.75rem;
-    padding: 1rem;
   }
   
   .snapshot-date-col {
@@ -2859,6 +3195,11 @@ const poolPowerChartOptions = {
   
   .snapshot-stat-col {
     justify-content: space-between;
+  }
+  
+  .pool-metrics-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 }
 </style>
