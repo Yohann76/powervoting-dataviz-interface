@@ -68,6 +68,7 @@ const analyzeSnapshotPools = (balancesArray: any[], powerVotingArray: any[]) => 
   let v3Active = 0
   let v3Inactive = 0
   const walletsWithPools = new Set<string>()
+  let v3DataAvailable = false // Flag pour indiquer si les données V3 sont disponibles
   
   // Analyser toutes les positions de pools
   balancesArray.forEach((wallet: any) => {
@@ -88,23 +89,20 @@ const analyzeSnapshotPools = (balancesArray: any[], powerVotingArray: any[]) => 
           if (regAmount <= 0) return
           
           hasPools = true
-          // Détecter V3 : plusieurs méthodes selon les données disponibles
-          // 1. Si poolType est défini explicitement
-          const hasPoolType = pos.poolType !== undefined
-          const isV3ByType = hasPoolType && (pos.poolType === 'v3' || pos.poolType === 'V3')
+          // Détecter V3 : utiliser EXACTEMENT la même logique que analyzePoolPositions
+          // V3 si tickLower/tickUpper sont présents (même si null/false, la présence de la propriété compte)
+          // Note: Les snapshots historiques peuvent ne pas avoir ces propriétés (structure de données différente)
+          const hasTickLower = pos.tickLower !== undefined
+          const hasTickUpper = pos.tickUpper !== undefined
+          const isV3 = hasTickLower && hasTickUpper
           
-          // 2. Si tickLower/tickUpper sont définis (format standard)
-          const hasTickRange = pos.tickLower !== undefined && pos.tickUpper !== undefined
-          
-          // 3. Si minPrice/maxPrice sont définis ET qu'il y a un feeTier (indicateur V3)
-          const hasPriceRange = pos.minPrice !== undefined && pos.maxPrice !== undefined && 
-                                typeof pos.minPrice === 'number' && typeof pos.maxPrice === 'number'
-          const hasFeeTier = pos.feeTier !== undefined
-          
-          // V3 si : poolType = v3, OU tickLower/tickUpper présents, OU (minPrice/maxPrice + feeTier)
-          const isV3 = isV3ByType || hasTickRange || (hasPriceRange && hasFeeTier)
+          // Si on trouve au moins une position avec tickLower/tickUpper, les données V3 sont disponibles
+          if (hasTickLower || hasTickUpper) {
+            v3DataAvailable = true
+          }
           
           // Pour V3, vérifier isActive. Si non défini, considérer comme actif si c'est V2, inactif si V3
+          // Note: pour les snapshots historiques, isActive peut ne pas être défini
           const isActive = pos.isActive !== undefined ? pos.isActive : (isV3 ? false : true)
           
           if (isV3) {
@@ -160,6 +158,7 @@ const analyzeSnapshotPools = (balancesArray: any[], powerVotingArray: any[]) => 
     v3Inactive,
     walletsWithPools: walletsWithPools.size,
     powerConcentration,
+    v3DataAvailable, // Indique si les données V3 sont disponibles dans ce snapshot
   }
 }
 
@@ -253,6 +252,7 @@ onMounted(async () => {
 
   try {
     availableSnapshots.value = await loadSnapshotManifest()
+    console.log('Available snapshots loaded:', availableSnapshots.value.length)
     // Load snapshot statistics
     await loadSnapshotStats()
     // Lancer automatiquement la recherche avec l'adresse par défaut
@@ -846,6 +846,7 @@ const snapshotStats = ref<Array<{
       top25: number
       top50: number
     }
+    v3DataAvailable?: boolean // Indique si les données V3 sont disponibles
   }
 }>>([])
 const expandedSnapshots = ref<Set<string>>(new Set())
@@ -887,9 +888,11 @@ const loadSnapshotStats = async () => {
       poolMetrics: currentPoolMetrics,
     })
     
-    // Load all historical snapshots
-    for (const snapshot of availableSnapshots.value) {
+    // Load all historical snapshots in parallel for better performance
+    console.log('Loading historical snapshots, count:', availableSnapshots.value.length)
+    const snapshotPromises = availableSnapshots.value.map(async (snapshot) => {
       try {
+        console.log('Loading snapshot:', snapshot.date)
         const { balances, powerVoting } = await loadSnapshot(snapshot)
         
         const balancesArray = balances.result?.balances || balances
@@ -912,7 +915,8 @@ const loadSnapshotStats = async () => {
           Array.isArray(powerVotingArray) ? powerVotingArray : []
         )
         
-        snapshotStats.value.push({
+        console.log(`Successfully loaded snapshot ${snapshot.date}`)
+        return {
           date: snapshot.date,
           dateFormatted: formatSnapshotDate(snapshot.date),
           isCurrent: false,
@@ -920,11 +924,24 @@ const loadSnapshotStats = async () => {
           reg,
           power,
           poolMetrics,
-        })
+        }
       } catch (err) {
         console.error(`Failed to load snapshot ${snapshot.date}:`, err)
+        return null // Return null for failed snapshots
       }
-    }
+    })
+    
+    // Wait for all snapshots to load
+    const results = await Promise.all(snapshotPromises)
+    
+    // Filter out failed snapshots and add to stats
+    results.forEach((result) => {
+      if (result) {
+        snapshotStats.value.push(result)
+      }
+    })
+    
+    console.log(`Total snapshots loaded: ${snapshotStats.value.length}`)
     
     // Sort by date (current first, then newest first)
     snapshotStats.value.sort((a, b) => {
@@ -1894,15 +1911,21 @@ const poolPowerChartOptions = {
               </div>
               <div class="pool-metric-item">
                 <span class="metric-label">Pools V3</span>
-                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Pools) }}</span>
+                <span class="metric-value">
+                  {{ stat.poolMetrics.v3DataAvailable === false ? 'N/A' : formatInteger(stat.poolMetrics.v3Pools) }}
+                </span>
               </div>
               <div class="pool-metric-item">
                 <span class="metric-label">V3 Actives</span>
-                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Active) }}</span>
+                <span class="metric-value">
+                  {{ stat.poolMetrics.v3DataAvailable === false ? 'N/A' : formatInteger(stat.poolMetrics.v3Active) }}
+                </span>
               </div>
               <div class="pool-metric-item">
                 <span class="metric-label">V3 Inactives</span>
-                <span class="metric-value">{{ formatInteger(stat.poolMetrics.v3Inactive) }}</span>
+                <span class="metric-value">
+                  {{ stat.poolMetrics.v3DataAvailable === false ? 'N/A' : formatInteger(stat.poolMetrics.v3Inactive) }}
+                </span>
               </div>
               <div class="pool-metric-item">
                 <span class="metric-label">Wallets avec pools</span>
